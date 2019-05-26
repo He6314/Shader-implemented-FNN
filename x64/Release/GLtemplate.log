@@ -1,0 +1,9 @@
+﻿  main.cpp
+main.cpp(66): warning C4312: “类型转换”: 从“GLuint”转换到更大的“void *”
+  正在生成代码
+  309 of 1396 functions (22.1%) were compiled, the rest were copied from previous compilation.
+    0 functions were new in current compilation
+    95 functions had inline decision re-evaluated but remain unchanged
+  已完成代码的生成
+  GLtemplate.vcxproj -> D:\GitHub\OpenGL-template\x64\Release\GLtemplate.exe
+  GLtemplate.vcxproj -> D:\GitHub\OpenGL-template\x64\Release\GLtemplate.pdb (Full PDB)

@@ -1,0 +1,4 @@
+﻿  main.cpp
+d:\github\opengl-template\main.cpp(66): warning C4312: “类型转换”: 从“GLuint”转换到更大的“void *”
+  GLtemplate.vcxproj -> D:\GitHub\OpenGL-template\x64\Debug\GLtemplate.exe
+  GLtemplate.vcxproj -> D:\GitHub\OpenGL-template\x64\Debug\GLtemplate.pdb (Full PDB)
