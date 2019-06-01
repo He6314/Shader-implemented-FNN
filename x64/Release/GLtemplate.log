@@ -1,9 +1,15 @@
 ﻿  main.cpp
-main.cpp(66): warning C4312: “类型转换”: 从“GLuint”转换到更大的“void *”
+main.cpp(41): warning C4838: 从“int”转换到“GLuint”需要收缩转换
+main.cpp(44): warning C4838: 从“int”转换到“GLuint”需要收缩转换
+main.cpp(70): warning C4312: “类型转换”: 从“GLuint”转换到更大的“void *”
+main.cpp(73): warning C4312: “类型转换”: 从“GLuint”转换到更大的“void *”
+main.cpp(75): warning C4312: “类型转换”: 从“GLuint”转换到更大的“void *”
+main.cpp(173): warning C4804: “*=”: 在操作中使用类型“bool”不安全
+main.cpp(173): warning C4800: “int”: 将值强制为布尔值“true”或“false”(性能警告)
   正在生成代码
-  309 of 1396 functions (22.1%) were compiled, the rest were copied from previous compilation.
+  313 of 1397 functions (22.4%) were compiled, the rest were copied from previous compilation.
     0 functions were new in current compilation
-    95 functions had inline decision re-evaluated but remain unchanged
+    99 functions had inline decision re-evaluated but remain unchanged
   已完成代码的生成
   GLtemplate.vcxproj -> D:\GitHub\OpenGL-template\x64\Release\GLtemplate.exe
   GLtemplate.vcxproj -> D:\GitHub\OpenGL-template\x64\Release\GLtemplate.pdb (Full PDB)

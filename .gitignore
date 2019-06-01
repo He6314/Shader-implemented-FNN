@@ -31,4 +31,9 @@
 *.out
 *.app
 
+#Compiled files
 *.opendb
+*.iobj
+*.ipdb
+*.log
+*.pdb

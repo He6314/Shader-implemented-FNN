@@ -172,8 +172,10 @@
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="shaders\template_fs.glsl" />
-    <None Include="shaders\template_vs.glsl" />
+    <None Include="shaders\p1_fs.glsl" />
+    <None Include="shaders\p1_vs.glsl" />
+    <None Include="shaders\p2_fs.glsl" />
+    <None Include="shaders\p2_vs.glsl" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
