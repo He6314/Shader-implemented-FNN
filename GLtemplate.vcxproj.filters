@@ -33,9 +33,6 @@
     <ClInclude Include="InitShader.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="LoadMesh.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
     <ClInclude Include="LoadTexture.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -46,6 +43,15 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="stb_truetype.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="TransMatrices.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="ShaderLocs.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="LoadMeshTangents.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>
@@ -65,13 +71,16 @@
     <ClCompile Include="InitShader.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="LoadMesh.cpp">
+    <ClCompile Include="main.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="TransMatrices.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="LoadMeshTangents.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="LoadTexture.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="main.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>

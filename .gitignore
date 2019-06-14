@@ -37,3 +37,9 @@
 *.ipdb
 *.log
 *.pdb
+*.iobj
+*.iobj
+*.ipdb
+*.log
+*.pdb
+x64\*

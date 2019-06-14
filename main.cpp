@@ -17,9 +17,10 @@
 #include <iostream>
 
 #include "InitShader.h"
-#include "LoadMesh.h"
+#include "LoadMeshTangents.h"
 #include "LoadTexture.h"
 #include "imgui_impl_glut.h"
+#include "TransMatrices.h"
 
 #define PI 3.141592653589793f
 
@@ -53,26 +54,27 @@ void draw_gui()
 {
    ImGui_ImplGlut_NewFrame();
 
+   ImGui::SetNextWindowPos(ImVec2(0, 0));
+   ImGui::Begin("Basic options");
    if (ImGui::Button("Reload Shader"))
    {
 	   reload_shader();
    }
-
-   //create a slider to change the angle variables
    ImGui::SliderFloat("View angle x", &angleX, -PI, +PI);
    ImGui::SliderFloat("View angle y", &angleY, -PI, +PI);
    ImGui::SliderFloat("View angle z", &angleZ, -PI, +PI);
-
    ImGui::SliderFloat("Model pos x", &posX, -2.f, +2.f);
    ImGui::SliderFloat("Model pos y", &posY, -2.f, +2.f);
    ImGui::SliderFloat("Model pos z", &posZ, -2.f, +2.f);
-
    ImGui::Image((void*)texture_id, ImVec2(128.f, 128.f), ImVec2(0.0, 1.0), ImVec2(1.0, 0.0));
+   ImGui::End();
 
-   ImGui::SameLine();
-   ImGui::Image((void*)paraBuffers[0], ImVec2(128.f, 128.f), ImVec2(0.0, 1.0), ImVec2(1.0, 0.0));
-   ImGui::SameLine();
-   ImGui::Image((void*)paraBuffers[1], ImVec2(128.f, 128.f), ImVec2(0.0, 1.0), ImVec2(1.0, 0.0));
+   ImGui::SetNextWindowPos(ImVec2(875, 0));
+   ImGui::Begin("Buffers");
+   ImGui::Image((void*)paraBuffers[0], ImVec2(400.f, 225.f), ImVec2(0.0, 1.0), ImVec2(1.0, 0.0));
+   ImGui::NewLine();
+   ImGui::Image((void*)paraBuffers[1], ImVec2(400.f, 225.f), ImVec2(0.0, 1.0), ImVec2(1.0, 0.0));
+   ImGui::End();
 
    static bool show = false;
    ImGui::ShowTestWindow();
@@ -87,15 +89,16 @@ void display()
    const int h = glutGet(GLUT_WINDOW_HEIGHT);
    const float aspect_ratio = float(w) / float(h);
 
-   glm::mat4 M = 
+   TransUBO matsUBO;
+   matsUBO.mats.M =
 	   glm::rotate(angleX, glm::vec3(1.0f, 0.0f, 0.0f))*
 	   glm::rotate(angleY, glm::vec3(0.0f, 1.0f, 0.0f))*
 	   glm::rotate(angleZ, glm::vec3(0.0f, 0.0f, 1.0f))*
-	   glm::translate(glm::vec3(posX,posY,posZ))*
+	   glm::translate(glm::vec3(posX,posY-1.0f,posZ))*
 	   glm::scale(glm::vec3(mesh_data.mScaleFactor));
-   glm::mat4 V = glm::lookAt(glm::vec3(0.0f, 1.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-   glm::mat4 P = glm::perspective(3.141592f / 4.0f, aspect_ratio, 0.1f, 100.0f);
-   glm::mat4 PVM = P*V*M;
+   matsUBO.mats.V = glm::lookAt(glm::vec3(0.0f, 1.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+   matsUBO.mats.P = glm::perspective(3.141592f / 4.0f, aspect_ratio, 0.1f, 100.0f);
+   glm::mat4 PVM = matsUBO.mats.P*matsUBO.mats.V*matsUBO.mats.M;
 
 /*/////////////////////////////////////
    PASS1
@@ -111,12 +114,12 @@ void display()
    glActiveTexture(GL_TEXTURE0);
    glBindTexture(GL_TEXTURE_2D, texture_id);
    int tex_loc = glGetUniformLocation(shader_program[0], "diffuse_color");
-   glUniform1i(tex_loc, 0); // we bound our texture to texture unit 0
-   int PVM_loc = glGetUniformLocation(shader_program[0], "PVM");
-   glUniformMatrix4fv(PVM_loc, 1, false, glm::value_ptr(PVM));
+   glUniform1i(tex_loc, 0); // we bound our texture to texture unit 0  
+   matsUBO.PassDataToShader();
 
    glBindVertexArray(mesh_data.mVao);
-   glDrawElements(GL_TRIANGLES, mesh_data.mNumIndices, GL_UNSIGNED_INT, 0);
+   mesh_data.DrawMesh();
+   //glDrawElements(GL_TRIANGLES, mesh_data.mNumIndices, GL_UNSIGNED_INT, 0);
 
 /*/////////////////////////////////////
    PASS2
@@ -128,10 +131,10 @@ void display()
    glClearColor(0.35f, 0.35f, 0.35f, 0.0f);
    glBindTexture(GL_TEXTURE_2D, texture_id);
    glUniform1i(tex_loc, 0);
-   glUniformMatrix4fv(PVM_loc, 1, false, glm::value_ptr(PVM));
+   matsUBO.PassDataToShader();
    
    glBindVertexArray(mesh_data.mVao);
-   glDrawElements(GL_TRIANGLES, mesh_data.mNumIndices, GL_UNSIGNED_INT, 0);
+   mesh_data.DrawMesh();
 
    draw_gui();
 
@@ -179,10 +182,10 @@ void reload_shader()
    else
    {
       glClearColor(0.35f, 0.35f, 0.35f, 0.0f);
-      if(mesh_data.mVao != -1)
-      {
-         BufferIndexedVerts(mesh_data);
-      }
+      //if(mesh_data.mVao != -1)
+      //{
+      //   BufferIndexedVerts(mesh_data);
+      //}
    }
 }
 
