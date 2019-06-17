@@ -31,7 +31,12 @@ void main(void)
 		//normalize(vec4(1.0,1.0,1.0,0.0));
 	fragcolor = shadingPhong(World_Normal,View,Light,Amb);
 
-	normalmap = World_Normal+vec4(0.5);
+	normalmap = World_Normal;
+
+	if(dot(World_Normal,View)<0){
+		fragcolor = vec4(0.0,0.3,0.3,0.5);
+		normalmap = vec4(0.3,0.0,0.3,0.5);
+	}
 }
 
 vec4 shadingPhong(vec4 normal, vec4 view, vec4 light, vec4 amb)

@@ -41,10 +41,14 @@ const int NUM_BUFFERS = 2;
 const int NUM_PASS = 2;
 GLuint paraBuffers[NUM_BUFFERS] = { -1 };
 GLuint fbo = -1;
+GLuint depth_rbo;
 
 GLuint shader_program[NUM_PASS] = { -1 };
 GLuint texture_id = -1;
+
 MeshData mesh_data;
+GLuint quad_vao;
+
 static const std::string vertex_shader[NUM_PASS] = { "shaders/p1_vs.glsl", "shaders/p2_vs.glsl" };
 static const std::string fragment_shader[NUM_PASS] = { "shaders/p1_fs.glsl", "shaders/p2_fs.glsl" };
 
@@ -108,7 +112,7 @@ void display()
    glBindFramebuffer(GL_FRAMEBUFFER, fbo); // Render to FBO, all gbuffer textures
    const GLenum drawBuffers[NUM_BUFFERS] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
    glDrawBuffers(NUM_BUFFERS, drawBuffers);
-   glClearColor(0.8f, 0.8f, 0.8f, 1.0f);
+   glClearColor(0.3f, 0.5f, 0.5f, 1.0f);
    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
    glActiveTexture(GL_TEXTURE0);
@@ -129,12 +133,15 @@ void display()
    glDrawBuffer(GL_BACK);
 
    glClearColor(0.35f, 0.35f, 0.35f, 0.0f);
-   glBindTexture(GL_TEXTURE_2D, texture_id);
+   glBindTexture(GL_TEXTURE_2D, paraBuffers[1]);
    glUniform1i(tex_loc, 0);
    matsUBO.PassDataToShader();
    
-   glBindVertexArray(mesh_data.mVao);
-   mesh_data.DrawMesh();
+   glDepthMask(GL_FALSE);
+   glBindVertexArray(quad_vao);
+   glDrawArrays(GL_TRIANGLE_STRIP, 0, 4); 
+   glBindVertexArray(0);
+   glDepthMask(GL_TRUE);
 
    draw_gui();
 
@@ -216,8 +223,9 @@ void initOpenGl()
    const int w = glutGet(GLUT_WINDOW_WIDTH);
    const int h = glutGet(GLUT_WINDOW_HEIGHT);
 
-   glGenTextures(NUM_BUFFERS, paraBuffers);
+   glGenVertexArrays(1, &quad_vao);
 
+   glGenTextures(NUM_BUFFERS, paraBuffers);
    for (int i = 0; i<NUM_BUFFERS; i++)
    {
 	   glBindTexture(GL_TEXTURE_2D, paraBuffers[i]);
@@ -229,6 +237,16 @@ void initOpenGl()
 	   glBindTexture(GL_TEXTURE_2D, 0);
    }
 
+   glGenTextures(1, &depth_rbo);
+   glBindTexture(GL_TEXTURE_2D, depth_rbo);
+   glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT24, w, h, 0, GL_DEPTH_COMPONENT, GL_FLOAT, 0);
+   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_NONE);
+   glBindTexture(GL_TEXTURE_2D, 0);
+
    glGenFramebuffers(1, &fbo);
    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
    //attach the texture we just created to color attachment 1
@@ -236,6 +254,7 @@ void initOpenGl()
    {
 	   glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0 + i, GL_TEXTURE_2D, paraBuffers[i], 0);
    }
+   glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depth_rbo, 0);
    //unbind the fbo
    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
