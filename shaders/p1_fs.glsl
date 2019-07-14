@@ -14,8 +14,10 @@ layout(std140, binding = 1) uniform Camera
 
 uniform sampler2D diffuse_color;
 
-layout(location=0) out vec4 fragcolor;    
-layout(location=1) out vec4 normalmap;
+layout(location=0) out vec4 fragColor;    
+layout(location=1) out vec4 normalMap;    
+layout(location=2) out vec4 viewMap;    
+layout(location=3) out vec4 ldMap;
      
 layout(location=0) in vec2 tex_coord;
 layout(location=1) in vec4 World_Pos;
@@ -27,16 +29,22 @@ void main(void)
 {   
 	vec4 Amb = 1.8*texture(diffuse_color, tex_coord);
 	vec4 View = normalize(World_CamPos-World_Pos);
-	vec4 Light = World_Pos - vec4(3.0,1.0,1.0,1.0);
+	vec4 Light = normalize(World_Pos - vec4(3.0,1.0,1.0,1.0));
 		//normalize(vec4(1.0,1.0,1.0,0.0));
-	fragcolor = shadingPhong(World_Normal,View,Light,Amb);
+	fragColor = shadingPhong(World_Normal,View,Light,Amb);
 
-	normalmap = World_Normal;
+	normalMap = World_Normal;
+	viewMap = View;
+	ldMap = Light;
 
-	if(dot(World_Normal,View)<0){
-		fragcolor = vec4(0.0,0.3,0.3,0.5);
-		normalmap = vec4(0.3,0.0,0.3,0.5);
-	}
+	viewMap.w = tex_coord.x;
+	ldMap.w = tex_coord.y;
+	normalMap.w = 1.0;
+
+//	if(dot(World_Normal,View)<0){
+//		fragColor = vec4(0.0,0.3,0.3,0.5);
+//		normalMap = vec4(0.3,0.0,0.3,0.5);
+//	}
 }
 
 vec4 shadingPhong(vec4 normal, vec4 view, vec4 light, vec4 amb)

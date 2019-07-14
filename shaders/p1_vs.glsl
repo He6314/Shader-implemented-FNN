@@ -27,4 +27,10 @@ void main(void)
    tex_coord = tex_coord_attrib;
    World_Pos = M * vec4(pos_attrib, 1.0);
    World_Normal = normalize(M * vec4(normal_attrib, 0.0));
+
+   mat4 xx = mat4(0.99985,  0.0, 0.01745, 0.0, 
+				  0.0,  1.0, 0.0, 0.0,
+				  -0.01745, 0.0, 0.99985, 0.0,
+				  0.0,  0.0, 0.0, 1.0);
+   //M = xx;
 }

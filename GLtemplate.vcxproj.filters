@@ -54,6 +54,9 @@
     <ClInclude Include="LoadMeshTangents.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="fcn.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="imgui.cpp">

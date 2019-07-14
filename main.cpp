@@ -1,5 +1,3 @@
-#define GLM_ENABLE_EXPERIMENTAL
-
 #include <windows.h>
 
 #include <GL/glew.h>
@@ -15,12 +13,16 @@
 #include <glm/gtc/type_ptr.hpp>
 
 #include <iostream>
+#include <iomanip>
+#include <vector>
 
 #include "InitShader.h"
 #include "LoadMeshTangents.h"
 #include "LoadTexture.h"
 #include "imgui_impl_glut.h"
 #include "TransMatrices.h"
+
+#include "fcn.hpp"
 
 #define PI 3.141592653589793f
 
@@ -37,11 +39,25 @@ float posY = 0.0f;
 float posX = 0.0f;
 float posZ = 0.0f;
 
-const int NUM_BUFFERS = 2;
+const int NUM_BUFFERS = 4;
 const int NUM_PASS = 2;
+
+const int MAX_PIXEL = 1000000;
+const int INPUT_DIM = 11;
+const int OUTPUT_DIM = 3;
+
 GLuint paraBuffers[NUM_BUFFERS] = { -1 };
 GLuint fbo = -1;
 GLuint depth_rbo;
+
+GLfloat bufferValue[NUM_BUFFERS][4];
+float bufferX[MAX_PIXEL][INPUT_DIM+1] = { 0 }; // 3 for normal, 3 for view, 3 for light direction, 2 for texCoord, 1 for index;
+float bufferY[MAX_PIXEL][OUTPUT_DIM+1] = { 0 }; // RGBA;
+
+double** trainX;
+double** trainY;
+double** validX;
+double** validY;
 
 GLuint shader_program[NUM_PASS] = { -1 };
 GLuint texture_id = -1;
@@ -52,32 +68,43 @@ GLuint quad_vao;
 static const std::string vertex_shader[NUM_PASS] = { "shaders/p1_vs.glsl", "shaders/p2_vs.glsl" };
 static const std::string fragment_shader[NUM_PASS] = { "shaders/p1_fs.glsl", "shaders/p2_fs.glsl" };
 
+
+//GLuint wbBuff;
+//glGenBuffers(1, &wbBuff);
+//glBindBuffer(GL_SHADER_STORAGE_BUFFER, wbBuff);
+//glBufferData(GL_SHADER_STORAGE_BUFFER, 8192, NULL, GL_DYNAMIC_COPY);
+
+
+
+//=============================================================================
+
 void reload_shader();
 
 void draw_gui()
 {
-   ImGui_ImplGlut_NewFrame();
+	ImGui_ImplGlut_NewFrame();
 
-   ImGui::SetNextWindowPos(ImVec2(0, 0));
-   ImGui::Begin("Basic options");
-   if (ImGui::Button("Reload Shader"))
-   {
-	   reload_shader();
-   }
-   ImGui::SliderFloat("View angle x", &angleX, -PI, +PI);
-   ImGui::SliderFloat("View angle y", &angleY, -PI, +PI);
-   ImGui::SliderFloat("View angle z", &angleZ, -PI, +PI);
-   ImGui::SliderFloat("Model pos x", &posX, -2.f, +2.f);
-   ImGui::SliderFloat("Model pos y", &posY, -2.f, +2.f);
-   ImGui::SliderFloat("Model pos z", &posZ, -2.f, +2.f);
-   ImGui::Image((void*)texture_id, ImVec2(128.f, 128.f), ImVec2(0.0, 1.0), ImVec2(1.0, 0.0));
-   ImGui::End();
+	ImGui::SetNextWindowPos(ImVec2(0, 0));
+	ImGui::Begin("Basic options");
+	if (ImGui::Button("Reload Shader"))
+	{
+		reload_shader();
+	}
+	ImGui::SliderFloat("View angle x", &angleX, -PI, +PI);
+	ImGui::SliderFloat("View angle y", &angleY, -PI, +PI);
+	ImGui::SliderFloat("View angle z", &angleZ, -PI, +PI);
+	ImGui::SliderFloat("Model pos x", &posX, -2.f, +2.f);
+	ImGui::SliderFloat("Model pos y", &posY, -2.f, +2.f);
+	ImGui::SliderFloat("Model pos z", &posZ, -2.f, +2.f);
+	ImGui::Image((void*)texture_id, ImVec2(128.f, 128.f), ImVec2(0.0, 1.0), ImVec2(1.0, 0.0));
+	ImGui::End();
 
-   ImGui::SetNextWindowPos(ImVec2(875, 0));
-   ImGui::Begin("Buffers");
-   ImGui::Image((void*)paraBuffers[0], ImVec2(400.f, 225.f), ImVec2(0.0, 1.0), ImVec2(1.0, 0.0));
-   ImGui::NewLine();
-   ImGui::Image((void*)paraBuffers[1], ImVec2(400.f, 225.f), ImVec2(0.0, 1.0), ImVec2(1.0, 0.0));
+	ImGui::SetNextWindowPos(ImVec2(875, 0));
+	ImGui::Begin("Buffers");
+	for (int i = 0; i < NUM_BUFFERS; i++) {
+		ImGui::Image((void*)paraBuffers[i], ImVec2(400.f, 225.f), ImVec2(0.0, 1.0), ImVec2(1.0, 0.0));
+		ImGui::NewLine();
+	}
    ImGui::End();
 
    static bool show = false;
@@ -110,9 +137,9 @@ void display()
    glUseProgram(shader_program[0]);
 
    glBindFramebuffer(GL_FRAMEBUFFER, fbo); // Render to FBO, all gbuffer textures
-   const GLenum drawBuffers[NUM_BUFFERS] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
+   const GLenum drawBuffers[NUM_BUFFERS] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2, GL_COLOR_ATTACHMENT3};
    glDrawBuffers(NUM_BUFFERS, drawBuffers);
-   glClearColor(0.3f, 0.5f, 0.5f, 1.0f);
+   glClearColor(0.3f, 0.5f, 0.5f, 0.0f);
    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
    glActiveTexture(GL_TEXTURE0);
@@ -133,8 +160,30 @@ void display()
    glDrawBuffer(GL_BACK);
 
    glClearColor(0.35f, 0.35f, 0.35f, 0.0f);
+
+   //for (int i = 0; i < NUM_BUFFERS; i++) {
+	  // glActiveTexture(GL_TEXTURE0);
+	  // int bufferLoc = 11 + i;
+	  // glBindTexture(GL_TEXTURE_2D, paraBuffers[i]);
+	  // glUniform1i(bufferLoc, i);
+   //}
+
+   glActiveTexture(GL_TEXTURE0);
+   glBindTexture(GL_TEXTURE_2D, paraBuffers[0]);
+   glUniform1i(10, 0);
+
+   glActiveTexture(GL_TEXTURE1);
    glBindTexture(GL_TEXTURE_2D, paraBuffers[1]);
-   glUniform1i(tex_loc, 0);
+   glUniform1i(11, 1);
+
+   glActiveTexture(GL_TEXTURE2);
+   glBindTexture(GL_TEXTURE_2D, paraBuffers[2]);
+   glUniform1i(12, 2);
+
+   glActiveTexture(GL_TEXTURE3);
+   glBindTexture(GL_TEXTURE_2D, paraBuffers[3]);
+   glUniform1i(13, 3);
+
    matsUBO.PassDataToShader();
    
    glDepthMask(GL_FALSE);
@@ -148,12 +197,154 @@ void display()
    glutSwapBuffers();
 }
 
+double* arrangeBuffer(int wIn, int wOut, int wHidden, int numHiddenLayer) {
+	int weightSize = wIn*wHidden + wOut*wHidden + numHiddenLayer*wHidden*wHidden;
+	int biasSize = wOut + numHiddenLayer*wHidden;
+	int paraSize = weightSize + biasSize;
+
+	double* loc = new double[paraSize];
+	return loc;
+}
+
+void CPUtest(int trainSize, int validSize) {
+	int batchSize = 100;
+	int wIn = INPUT_DIM;
+	int wOut = OUTPUT_DIM;
+
+	int numHiddenLayer = 3;
+	int wHidden = 12;
+	int depth = numHiddenLayer + 1;
+
+	int weightSize = wIn*wHidden + wOut*wHidden + numHiddenLayer*wHidden*wHidden;
+	int biasSize = wOut + numHiddenLayer*wHidden;
+	int paraSize = weightSize + biasSize;
+
+	double* loc = arrangeBuffer(wIn, wOut, wHidden, numHiddenLayer);// new double[paraSize];
+	double* biasLoc = loc + weightSize; //这个计算没问题。sizeof double = 64， weightSize = 0x500
+
+	Fcn network(wIn, wOut);
+
+	for (int i = 0; i < numHiddenLayer; i++) {
+		network.AddFCNlayer(wHidden);
+	}
+
+	network.Finish(loc, biasLoc);
+	network.SetTrainData(trainX, trainY, trainSize, batchSize);
+	network.SetValidData(validX, validY, validSize);
+
+	network.TrainCPU();
+}
+
+void splitData(int n) {
+	int numTrain = n*0.8;
+	int numValid = n - numTrain;
+
+	trainX = new double*[numTrain];
+	trainY = new double*[numTrain];
+	validX = new double*[numValid];
+	validY = new double*[numValid];
+
+	std::vector<int> index;
+	for(int i = 0; i<n; i++) index.push_back(i);
+	std::random_shuffle(index.begin(), index.end());
+
+	//double maxTrain = 0;
+	int testN = 0;
+	for (int i = 0; i < numTrain; i++) {
+		int k = index[i];
+		trainX[i] = new double[INPUT_DIM];
+		trainY[i] = new double[OUTPUT_DIM];
+		for (int j = 0; j < INPUT_DIM; j++) { trainX[i][j] = bufferX[k][j]; }
+		for (int j = 0; j < OUTPUT_DIM; j++) {
+			trainY[i][j] = bufferY[k][j] - 0.25f; 
+		//if (bufferY[k][j] > maxTrain)maxTrain = bufferY[k][j];
+		}
+		
+		testN++;
+	}
+	std::cout << "num train: " << testN << std::endl;
+//	std::cout << "max train:" << maxTrain << std::endl;
+
+	testN = 0;
+	//double maxTest;
+	for (int i = 0; i < numValid; i++) {
+		int k = index[i + numTrain];
+		validX[i] = new double[INPUT_DIM];
+		validY[i] = new double[OUTPUT_DIM];
+		for (int j = 0; j < INPUT_DIM; j++) { validX[i][j] = bufferX[k][j]; }
+		for (int j = 0; j < OUTPUT_DIM; j++) {
+			validY[i][j] = bufferY[k][j] - 0.25f;
+		//if (bufferY[k][j] > maxTest)maxTest = bufferY[k][j];
+		}
+		testN++;
+	}
+	std::cout << "num validation: " << testN << std::endl;
+	//std::cout << "max test:" << maxTest << std::endl;
+
+	CPUtest(numTrain, numValid);
+}
+
+void loadBuffer() {
+	const int buffer_width = glutGet(GLUT_WINDOW_WIDTH);
+	const int buffer_height = glutGet(GLUT_WINDOW_HEIGHT);
+
+	int n = 0;
+	for (int i = 0; i < buffer_width; i++)
+		for (int j = 0; j < buffer_height; j++)
+		{
+			float isFore[4]{ 0 };
+			glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+			glReadBuffer(GL_COLOR_ATTACHMENT1);
+			glPixelStorei(GL_PACK_ALIGNMENT, 1);
+			glReadPixels(i, j, 1, 1, GL_RGBA, GL_FLOAT, isFore);
+
+			if (isFore[3] == 1.0) {
+				bufferX[n][0] = isFore[0];
+				bufferX[n][1] = isFore[1];
+				bufferX[n][2] = isFore[2];
+
+				float temp[4];
+				glReadBuffer(GL_COLOR_ATTACHMENT2);
+				glPixelStorei(GL_PACK_ALIGNMENT, 2);
+				glReadPixels(i, j, 1, 1, GL_RGBA, GL_FLOAT, temp);
+				bufferX[n][3] = temp[0];
+				bufferX[n][4] = temp[1];
+				bufferX[n][5] = temp[2];
+				bufferX[n][9] = temp[3];
+
+				glReadBuffer(GL_COLOR_ATTACHMENT3);
+				glPixelStorei(GL_PACK_ALIGNMENT, 3);
+				glReadPixels(i, j, 1, 1, GL_RGBA, GL_FLOAT, temp);
+				bufferX[n][6] = temp[0];
+				bufferX[n][7] = temp[1];
+				bufferX[n][8] = temp[2];
+				bufferX[n][10] = temp[3];
+
+				bufferX[n][11] = n;
+
+				glReadBuffer(GL_COLOR_ATTACHMENT0);
+				glPixelStorei(GL_PACK_ALIGNMENT, 0);
+				glReadPixels(i, j, 1, 1, GL_RGBA, GL_FLOAT, temp);
+				bufferY[n][0] = temp[0];
+				bufferY[n][1] = temp[1];
+				bufferY[n][2] = temp[2];
+				bufferY[n][3] = temp[3];
+				n++;
+			}
+			glBindFramebuffer(GL_FRAMEBUFFER, 0);			
+		}
+
+	std::cout << n << std::endl;
+	splitData(n);
+}
+
 void idle()
 {
 	glutPostRedisplay();
 
    const int time_ms = glutGet(GLUT_ELAPSED_TIME);
    time_sec = 0.001f*time_ms;
+
 }
 
 bool reload_shader_pass(int i) {
@@ -180,7 +371,7 @@ void reload_shader()
 	bool reloadFlag = true;
 
 	for (int i = 0; i < NUM_PASS; i++) {
-		reloadFlag *= reload_shader_pass(i);
+		reloadFlag = reloadFlag&&reload_shader_pass(i);
 	}
    if(!reloadFlag) // loading failed
    {
@@ -269,8 +460,13 @@ void keyboard(unsigned char key, int x, int y)
    {
       case 'r':
       case 'R':
-         reload_shader();     
-      break;
+         reload_shader();
+		 break;
+
+	  case 'b':
+	  case 'B':
+		  loadBuffer();
+		  break;
    }
 }
 
@@ -302,8 +498,57 @@ void motion(int x, int y)
 void mouse(int button, int state, int x, int y)
 {
    ImGui_ImplGlut_MouseButtonCallback(button, state);
-}
 
+   if (button == 0) {
+	   int mouseX = x;
+	   int mouseY = y;
+	   const int buffer_width = glutGet(GLUT_WINDOW_WIDTH);
+	   const int buffer_height = glutGet(GLUT_WINDOW_HEIGHT);
+
+	   glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+	   glReadBuffer(GL_COLOR_ATTACHMENT0);
+	   glPixelStorei(GL_PACK_ALIGNMENT, 0);
+	   glReadPixels(mouseX, buffer_height - mouseY, 1, 1, GL_RGBA, GL_FLOAT, bufferValue[0]);
+
+	   glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+	   glReadBuffer(GL_COLOR_ATTACHMENT1);
+	   glPixelStorei(GL_PACK_ALIGNMENT, 1);
+	   glReadPixels(mouseX, buffer_height - mouseY, 1, 1, GL_RGBA, GL_FLOAT, bufferValue[1]);
+
+	   glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+	   glReadBuffer(GL_COLOR_ATTACHMENT2);
+	   glPixelStorei(GL_PACK_ALIGNMENT, 2);
+	   glReadPixels(mouseX, buffer_height - mouseY, 1, 1, GL_RGBA, GL_FLOAT, bufferValue[2]);
+
+	   glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+	   glReadBuffer(GL_COLOR_ATTACHMENT3);
+	   glPixelStorei(GL_PACK_ALIGNMENT, 3);
+	   glReadPixels(mouseX, buffer_height - mouseY, 1, 1, GL_RGBA, GL_FLOAT, bufferValue[3]);
+
+	   glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+	   std::cout << std::setprecision(4) << "x: " << x << ", y: " << y << std::endl;
+	   std::cout << std::setprecision(4) << "buffer0:\t" << bufferValue[0][0] << "\t" << bufferValue[0][1] << "\t" << bufferValue[0][2] << "\t" << bufferValue[0][3] << std::endl;
+	   std::cout << std::setprecision(4) << "buffer1:\t" << bufferValue[1][0] << "\t" << bufferValue[1][1] << "\t" << bufferValue[1][2] << "\t" << bufferValue[1][3] << std::endl;
+	   std::cout << std::setprecision(4) << "buffer2:\t" << bufferValue[2][0] << "\t" << bufferValue[2][1] << "\t" << bufferValue[2][2] << "\t" << bufferValue[2][3] << std::endl;
+	   std::cout << std::setprecision(4) << "buffer3:\t" << bufferValue[3][0] << "\t" << bufferValue[3][1] << "\t" << bufferValue[3][2] << "\t" << bufferValue[3][3] << std::endl;
+   }
+   //else {
+	  // int mouseX = x;
+	  // int mouseY = y;
+	  // const int buffer_width = glutGet(GLUT_WINDOW_WIDTH);
+	  // const int buffer_height = glutGet(GLUT_WINDOW_HEIGHT);
+	  // int index = mouseX * buffer_height + (buffer_height - mouseY);
+	  // std::cout << "X: " << std::endl;
+	  // std::cout << std::setprecision(4) << "normal:\t" << bufferX[index][0] << "\t" << bufferX[index][1] << "\t" << bufferX[index][2] << std::endl;
+	  // std::cout << std::setprecision(4) << "view:\t" << bufferX[index][3] << "\t" << bufferX[index][4] << "\t" << bufferX[index][5] << std::endl;
+	  // std::cout << std::setprecision(4) << "light:\t" << bufferX[index][6] << "\t" << bufferX[index][7] << "\t" << bufferX[index][8] << std::endl;
+	  // std::cout << std::setprecision(4) << "texCoord:\t" << bufferX[index][9] << "\t" << bufferX[index][10] << std::endl;
+	  // std::cout << "Y: " << std::endl;
+	  // std::cout << std::setprecision(4) << "RGBA:\t" << bufferY[index][0] << "\t" << bufferY[index][1] << "\t" << bufferY[index][2] << "\t" << bufferY[index][3] << std::endl;
+	  // std::cout << std::endl;
+   //}
+}
 
 int main (int argc, char **argv)
 {
