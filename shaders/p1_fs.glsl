@@ -36,7 +36,7 @@ void main(void)
 	normalMap = World_Normal;
 	viewMap = View;
 	ldMap = Light;
-
+	//ldMap.z = 1.0;
 	viewMap.w = tex_coord.x;
 	ldMap.w = tex_coord.y;
 	normalMap.w = 1.0;

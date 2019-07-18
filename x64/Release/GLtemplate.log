@@ -1,14 +1,24 @@
 ﻿  main.cpp
-main.cpp(49): warning C4838: 从“int”转换到“GLuint”需要收缩转换
-main.cpp(62): warning C4838: 从“int”转换到“GLuint”需要收缩转换
-main.cpp(99): warning C4312: “类型转换”: 从“GLuint”转换到更大的“void *”
-main.cpp(105): warning C4312: “类型转换”: 从“GLuint”转换到更大的“void *”
-main.cpp(239): warning C4244: “初始化”: 从“double”转换到“int”，可能丢失数据
-main.cpp(323): warning C4244: “=”: 从“int”转换到“float”，可能丢失数据
+d:\github\opengl-template\fcn.hpp(298): warning C4305: “初始化”: 从“double”到“float”截断
+d:\github\opengl-template\fcn.hpp(491): warning C4244: “+=”: 从“double”转换到“float”，可能丢失数据
+d:\github\opengl-template\fcn.hpp(517): warning C4244: “+=”: 从“double”转换到“float”，可能丢失数据
+d:\github\opengl-template\NetworkMatrices.hpp(82): warning C4996: 'localtime': This function or variable may be unsafe. Consider using localtime_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+  C:\Program Files (x86)\Windows Kits\10\Include\10.0.16299.0\ucrt\time.h(505): note: 参见“localtime”的声明
+d:\github\opengl-template\NetworkMatrices.hpp(115): warning C4244: “=”: 从“double”转换到“int”，可能丢失数据
+d:\github\opengl-template\NetworkMatrices.hpp(119): warning C4244: “=”: 从“double”转换到“int”，可能丢失数据
+d:\github\opengl-template\NetworkMatrices.hpp(124): warning C4244: “=”: 从“double”转换到“int”，可能丢失数据
+d:\github\opengl-template\NetworkMatrices.hpp(133): warning C4244: “=”: 从“double”转换到“int”，可能丢失数据
+d:\github\opengl-template\NetworkMatrices.hpp(143): warning C4244: “=”: 从“double”转换到“float”，可能丢失数据
+main.cpp(50): warning C4838: 从“int”转换到“GLuint”需要收缩转换
+main.cpp(63): warning C4838: 从“int”转换到“GLuint”需要收缩转换
+main.cpp(111): warning C4312: “类型转换”: 从“GLuint”转换到更大的“void *”
+main.cpp(126): warning C4312: “类型转换”: 从“GLuint”转换到更大的“void *”
+main.cpp(262): warning C4244: “初始化”: 从“double”转换到“int”，可能丢失数据
+main.cpp(349): warning C4244: “=”: 从“int”转换到“float”，可能丢失数据
   正在生成代码
-  288 of 1959 functions (14.7%) were compiled, the rest were copied from previous compilation.
-    1 functions were new in current compilation
-    123 functions had inline decision re-evaluated but remain unchanged
+  288 of 1989 functions (14.5%) were compiled, the rest were copied from previous compilation.
+    0 functions were new in current compilation
+    122 functions had inline decision re-evaluated but remain unchanged
   已完成代码的生成
   GLtemplate.vcxproj -> D:\GitHub\OpenGL-template\x64\Release\GLtemplate.exe
   GLtemplate.vcxproj -> D:\GitHub\OpenGL-template\x64\Release\GLtemplate.pdb (Full PDB)

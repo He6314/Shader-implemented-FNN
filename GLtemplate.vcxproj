@@ -158,6 +158,7 @@
     <ClInclude Include="InitShader.h" />
     <ClInclude Include="LoadMeshTangents.h" />
     <ClInclude Include="LoadTexture.h" />
+    <ClInclude Include="NetworkMatrices.hpp" />
     <ClInclude Include="optimizer.hpp" />
     <ClInclude Include="ShaderLocs.h" />
     <ClInclude Include="stb_rect_pack.h" />

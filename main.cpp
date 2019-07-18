@@ -23,6 +23,7 @@
 #include "TransMatrices.h"
 
 #include "fcn.hpp"
+#include "NetworkMatrices.hpp"
 
 #define PI 3.141592653589793f
 
@@ -31,19 +32,19 @@ static const std::string texture_name = "models/BLJ/Main Texture/[Albedo].jpg";
 
 float time_sec = 0.0f;
 
-float angleY = 0.0f;
 float angleX = 0.0f;
+float angleY = -0.7f;//0.0f;
 float angleZ = 0.0f;
 
-float posY = 0.0f;
-float posX = 0.0f;
-float posZ = 0.0f;
+float posY = 0.4f;//0.0f;
+float posX = 0.4f;//0.0f;
+float posZ = 0.7f;//0.0f;
 
 const int NUM_BUFFERS = 4;
 const int NUM_PASS = 2;
 
 const int MAX_PIXEL = 1000000;
-const int INPUT_DIM = 11;
+const int INPUT_DIM = 6;
 const int OUTPUT_DIM = 3;
 
 GLuint paraBuffers[NUM_BUFFERS] = { -1 };
@@ -54,10 +55,10 @@ GLfloat bufferValue[NUM_BUFFERS][4];
 float bufferX[MAX_PIXEL][INPUT_DIM+1] = { 0 }; // 3 for normal, 3 for view, 3 for light direction, 2 for texCoord, 1 for index;
 float bufferY[MAX_PIXEL][OUTPUT_DIM+1] = { 0 }; // RGBA;
 
-double** trainX;
-double** trainY;
-double** validX;
-double** validY;
+float** trainX;
+float** trainY;
+float** validX;
+float** validY;
 
 GLuint shader_program[NUM_PASS] = { -1 };
 GLuint texture_id = -1;
@@ -68,15 +69,21 @@ GLuint quad_vao;
 static const std::string vertex_shader[NUM_PASS] = { "shaders/p1_vs.glsl", "shaders/p2_vs.glsl" };
 static const std::string fragment_shader[NUM_PASS] = { "shaders/p1_fs.glsl", "shaders/p2_fs.glsl" };
 
+int wIn = INPUT_DIM;
+int wOut = OUTPUT_DIM;
+int numHiddenLayer = 4;
+int wHidden = 8;
 
-//GLuint wbBuff;
-//glGenBuffers(1, &wbBuff);
-//glBindBuffer(GL_SHADER_STORAGE_BUFFER, wbBuff);
-//glBufferData(GL_SHADER_STORAGE_BUFFER, 8192, NULL, GL_DYNAMIC_COPY);
+float maxVectorX[INPUT_DIM] = { 0 };
+float minVectorX[INPUT_DIM] = { 0 };
+float maxVectorY[OUTPUT_DIM] = { 0 };
+float minVectorY[OUTPUT_DIM] = { 0 };
 
+float aveVectorX[INPUT_DIM] = { 0 };
+float aveVectorY[OUTPUT_DIM] = { 0 };
 
-
-//=============================================================================
+FcnSSBO fcnMat(wIn, wOut, wHidden, numHiddenLayer);
+char* fname = new char[50];
 
 void reload_shader();
 
@@ -96,7 +103,21 @@ void draw_gui()
 	ImGui::SliderFloat("Model pos x", &posX, -2.f, +2.f);
 	ImGui::SliderFloat("Model pos y", &posY, -2.f, +2.f);
 	ImGui::SliderFloat("Model pos z", &posZ, -2.f, +2.f);
+
+	static int outL = numHiddenLayer + 1;
+	ImGui::SliderInt("OutLayer", &outL, 0, numHiddenLayer + 1);
+	glUniform1i(99, outL);
+
 	ImGui::Image((void*)texture_id, ImVec2(128.f, 128.f), ImVec2(0.0, 1.0), ImVec2(1.0, 0.0));
+
+	//ImGui::InputText("Filename", &fname[0], 50);
+	//ImGui::SameLine();
+	//if (ImGui::Button("Load"))
+	//{
+	//	fcnMat.ReadFromFile(string(fname));
+	//}
+
+
 	ImGui::End();
 
 	ImGui::SetNextWindowPos(ImVec2(875, 0));
@@ -185,7 +206,8 @@ void display()
    glUniform1i(13, 3);
 
    matsUBO.PassDataToShader();
-   
+   AveVectorUBO aves(aveVectorX, INPUT_DIM, aveVectorY, OUTPUT_DIM);
+
    glDepthMask(GL_FALSE);
    glBindVertexArray(quad_vao);
    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4); 
@@ -197,30 +219,27 @@ void display()
    glutSwapBuffers();
 }
 
-double* arrangeBuffer(int wIn, int wOut, int wHidden, int numHiddenLayer) {
-	int weightSize = wIn*wHidden + wOut*wHidden + numHiddenLayer*wHidden*wHidden;
+float* arrangeBuffer(int wIn, int wOut, int wHidden, int numHiddenLayer) {
+	int weightSize = wIn*wHidden + wOut*wHidden + (numHiddenLayer-1)*wHidden*wHidden;
 	int biasSize = wOut + numHiddenLayer*wHidden;
 	int paraSize = weightSize + biasSize;
 
-	double* loc = new double[paraSize];
+	float* loc = new float[paraSize];
 	return loc;
 }
 
 void CPUtest(int trainSize, int validSize) {
 	int batchSize = 100;
-	int wIn = INPUT_DIM;
-	int wOut = OUTPUT_DIM;
 
-	int numHiddenLayer = 3;
-	int wHidden = 12;
 	int depth = numHiddenLayer + 1;
 
-	int weightSize = wIn*wHidden + wOut*wHidden + numHiddenLayer*wHidden*wHidden;
+	int weightSize = wIn*wHidden + wOut*wHidden + (numHiddenLayer-1)*wHidden*wHidden;
 	int biasSize = wOut + numHiddenLayer*wHidden;
 	int paraSize = weightSize + biasSize;
 
-	double* loc = arrangeBuffer(wIn, wOut, wHidden, numHiddenLayer);// new double[paraSize];
-	double* biasLoc = loc + weightSize; //这个计算没问题。sizeof double = 64， weightSize = 0x500
+	
+	float* loc = fcnMat.Mats();//arrangeBuffer(wIn, wOut, wHidden, numHiddenLayer);// new float[paraSize];
+	float* biasLoc = loc + weightSize; //这个计算没问题。sizeof float = 64， weightSize = 0x500
 
 	Fcn network(wIn, wOut);
 
@@ -233,47 +252,53 @@ void CPUtest(int trainSize, int validSize) {
 	network.SetValidData(validX, validY, validSize);
 
 	network.TrainCPU();
+
+	fcnMat.PassCtrlToShader();
+	fcnMat.PassDataToShader();
+	fcnMat.WriteToFile();
 }
 
 void splitData(int n) {
 	int numTrain = n*0.8;
 	int numValid = n - numTrain;
 
-	trainX = new double*[numTrain];
-	trainY = new double*[numTrain];
-	validX = new double*[numValid];
-	validY = new double*[numValid];
+	trainX = new float*[numTrain];
+	trainY = new float*[numTrain];
+	validX = new float*[numValid];
+	validY = new float*[numValid];
 
 	std::vector<int> index;
 	for(int i = 0; i<n; i++) index.push_back(i);
 	std::random_shuffle(index.begin(), index.end());
 
-	//double maxTrain = 0;
+	//float maxTrain = 0;
 	int testN = 0;
 	for (int i = 0; i < numTrain; i++) {
 		int k = index[i];
-		trainX[i] = new double[INPUT_DIM];
-		trainY[i] = new double[OUTPUT_DIM];
-		for (int j = 0; j < INPUT_DIM; j++) { trainX[i][j] = bufferX[k][j]; }
-		for (int j = 0; j < OUTPUT_DIM; j++) {
-			trainY[i][j] = bufferY[k][j] - 0.25f; 
-		//if (bufferY[k][j] > maxTrain)maxTrain = bufferY[k][j];
+		trainX[i] = new float[INPUT_DIM];
+		trainY[i] = new float[OUTPUT_DIM];
+		for (int j = 0; j < INPUT_DIM; j++) {
+			trainX[i][j] = bufferX[k][j] -aveVectorX[j];
 		}
-		
+		for (int j = 0; j < OUTPUT_DIM; j++) {
+			trainY[i][j] = bufferY[k][j] -aveVectorY[j];
+		}
 		testN++;
 	}
 	std::cout << "num train: " << testN << std::endl;
 //	std::cout << "max train:" << maxTrain << std::endl;
 
 	testN = 0;
-	//double maxTest;
+	//float maxTest;
 	for (int i = 0; i < numValid; i++) {
 		int k = index[i + numTrain];
-		validX[i] = new double[INPUT_DIM];
-		validY[i] = new double[OUTPUT_DIM];
-		for (int j = 0; j < INPUT_DIM; j++) { validX[i][j] = bufferX[k][j]; }
+		validX[i] = new float[INPUT_DIM];
+		validY[i] = new float[OUTPUT_DIM];
+		for (int j = 0; j < INPUT_DIM; j++) {
+			validX[i][j] = bufferX[k][j] -aveVectorX[j] ;
+		}
 		for (int j = 0; j < OUTPUT_DIM; j++) {
-			validY[i][j] = bufferY[k][j] - 0.25f;
+			validY[i][j] = bufferY[k][j] -aveVectorY[j];
 		//if (bufferY[k][j] > maxTest)maxTest = bufferY[k][j];
 		}
 		testN++;
@@ -301,7 +326,7 @@ void loadBuffer() {
 			if (isFore[3] == 1.0) {
 				bufferX[n][0] = isFore[0];
 				bufferX[n][1] = isFore[1];
-				bufferX[n][2] = isFore[2];
+				bufferX[n][2] = isFore[2];//normal
 
 				float temp[4];
 				glReadBuffer(GL_COLOR_ATTACHMENT2);
@@ -309,18 +334,24 @@ void loadBuffer() {
 				glReadPixels(i, j, 1, 1, GL_RGBA, GL_FLOAT, temp);
 				bufferX[n][3] = temp[0];
 				bufferX[n][4] = temp[1];
-				bufferX[n][5] = temp[2];
-				bufferX[n][9] = temp[3];
+				bufferX[n][5] = temp[2];//view
+				//bufferX[n][9] = temp[3];//texCoord.x
 
-				glReadBuffer(GL_COLOR_ATTACHMENT3);
-				glPixelStorei(GL_PACK_ALIGNMENT, 3);
-				glReadPixels(i, j, 1, 1, GL_RGBA, GL_FLOAT, temp);
-				bufferX[n][6] = temp[0];
-				bufferX[n][7] = temp[1];
-				bufferX[n][8] = temp[2];
-				bufferX[n][10] = temp[3];
+				//glReadBuffer(GL_COLOR_ATTACHMENT3);
+				//glPixelStorei(GL_PACK_ALIGNMENT, 3);
+				//glReadPixels(i, j, 1, 1, GL_RGBA, GL_FLOAT, temp);
+				//bufferX[n][6] = temp[0];
+				//bufferX[n][7] = temp[1];
+				//bufferX[n][8] = temp[2];//light
+				//bufferX[n][10] = temp[3];//texCoord.y
 
-				bufferX[n][11] = n;
+				//bufferX[n][11] = n;
+				bufferX[n][6] = n;
+
+				for (int i = 0; i < INPUT_DIM; i++) {
+					if (bufferX[n][i] > maxVectorX[i]) maxVectorX[i] = bufferX[n][i];
+					if (bufferX[n][i] < minVectorX[i]) minVectorX[i] = bufferX[n][i];
+				}
 
 				glReadBuffer(GL_COLOR_ATTACHMENT0);
 				glPixelStorei(GL_PACK_ALIGNMENT, 0);
@@ -329,7 +360,19 @@ void loadBuffer() {
 				bufferY[n][1] = temp[1];
 				bufferY[n][2] = temp[2];
 				bufferY[n][3] = temp[3];
+
+				for (int i = 0; i < OUTPUT_DIM; i++) {
+					if (bufferY[n][i] > maxVectorY[i]) maxVectorY[i] = bufferY[n][i];
+					if (bufferY[n][i] < minVectorY[i]) minVectorY[i] = bufferY[n][i];
+				}
+
 				n++;
+			}
+			for (int i = 0; i < INPUT_DIM; i++) {
+				aveVectorX[i] = (maxVectorX[j] + minVectorX[j]) / 2;
+			}
+			for (int i = 0; i < OUTPUT_DIM; i++) {
+				aveVectorY[i] = (maxVectorY[j] + minVectorY[j]) / 2;
 			}
 			glBindFramebuffer(GL_FRAMEBUFFER, 0);			
 		}
@@ -414,6 +457,8 @@ void initOpenGl()
    const int w = glutGet(GLUT_WINDOW_WIDTH);
    const int h = glutGet(GLUT_WINDOW_HEIGHT);
 
+   fcnMat.InitBuffer();
+
    glGenVertexArrays(1, &quad_vao);
 
    glGenTextures(NUM_BUFFERS, paraBuffers);
@@ -448,6 +493,17 @@ void initOpenGl()
    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depth_rbo, 0);
    //unbind the fbo
    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+   fcnMat.ReadFromFile("mats/mats201907181207.txt");
+   //for (int i = 0; i < 10; i++) {
+	  // mats[i] = float(i) / 9.f;
+   //}
+   //GLuint matLoc = 3;
+   //glGenBuffers(1, &matSSBO);
+   //glBindBuffer(GL_SHADER_STORAGE_BUFFER, matSSBO);
+   //glBufferData(GL_SHADER_STORAGE_BUFFER, 10*sizeof(float), &mats[0], GL_DYNAMIC_COPY);
+   //glBindBufferBase(GL_SHADER_STORAGE_BUFFER, matLoc, matSSBO);
+   //glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
 
 // glut callbacks need to send keyboard and mouse events to imgui

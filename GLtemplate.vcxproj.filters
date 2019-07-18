@@ -57,6 +57,12 @@
     <ClInclude Include="fcn.hpp">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="optimizer.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="NetworkMatrices.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="imgui.cpp">

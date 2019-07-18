@@ -1,4 +1,14 @@
-﻿  main.cpp
-d:\github\opengl-template\main.cpp(66): warning C4312: “类型转换”: 从“GLuint”转换到更大的“void *”
-  GLtemplate.vcxproj -> D:\GitHub\OpenGL-template\x64\Debug\GLtemplate.exe
-  GLtemplate.vcxproj -> D:\GitHub\OpenGL-template\x64\Debug\GLtemplate.pdb (Full PDB)
+﻿  TransMatrices.cpp
+d:\github\opengl-template\include\glm\gtx\transform.hpp(23): fatal error C1189: #error:  "GLM: GLM_GTX_transform is an experimental extension and may change in the future. Use #define GLM_ENABLE_EXPERIMENTAL before including it, if you really want to use it."
+  main.cpp
+d:\github\opengl-template\include\glm\gtx\transform.hpp(23): fatal error C1189: #error:  "GLM: GLM_GTX_transform is an experimental extension and may change in the future. Use #define GLM_ENABLE_EXPERIMENTAL before including it, if you really want to use it."
+  LoadTexture.cpp
+d:\github\opengl-template\loadtexture.cpp : fatal error C1041: 无法打开程序数据库“D:\GitHub\OpenGL-template\x64\Debug\vc140.idb”；如果要将多个 CL.EXE 写入同一个 .PDB 文件，请使用 /FS
+  LoadMeshTangents.cpp
+d:\github\opengl-template\loadmeshtangents.cpp(177): warning C4018: “<”: 有符号/无符号不匹配
+  InitShader.cpp
+  imgui_impl_glut.cpp
+  imgui_draw.cpp
+  imgui_demo.cpp
+  imgui.cpp
+  正在生成代码...
