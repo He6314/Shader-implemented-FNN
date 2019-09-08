@@ -32,8 +32,14 @@ public:
 	}
 
 	void PassCtrlToShader() {
+		// sizeof(ControlParas)
+
+		for (int i = 0; i < MAX_DEPTH; i++) {
+			paras.width[i] = i + 1;
+		}
+
 		glBindBuffer(GL_UNIFORM_BUFFER, paraUBO);
-		glBufferData(GL_UNIFORM_BUFFER, sizeof(ControlParas), &paras.depth, GL_DYNAMIC_DRAW);
+		glBufferData(GL_UNIFORM_BUFFER, 128, &paras.depth, GL_DYNAMIC_DRAW);
 		glBindBufferBase(GL_UNIFORM_BUFFER, paraLoc, paraUBO);
 		glBindBuffer(GL_UNIFORM_BUFFER, 0);
 	}
@@ -81,7 +87,7 @@ public:
 		time_t t = std::time(nullptr);
 		tm local = *std::localtime(&t);
 		std::ostringstream filename;
-		filename << "mats/mats" << std::put_time(&local, "%Y%m%d%H%m") << ".txt";
+		filename << "mats/mats" << std::put_time(&local, "%Y%m%d%H%M") << ".txt";
 		file.open(filename.str());
 
 		file << "DEPTH " << paras.depth << "\n";

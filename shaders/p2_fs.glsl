@@ -54,8 +54,8 @@ void main(void)
 	
 	if(texture(buffer1, tex_coord).w!=0.0)
 	fragcolor = Eval(normal, view, light, tex);
-
-	else fragcolor = 10.*vec4(aveIn[0]);//vec4(0.3,0.5,0.5,0.0);
+	
+	else fragcolor = vec4(width[-1]);//10.*vec4(aveIn[0]);//vec4(0.3,0.5,0.5,0.0);
 	//10.*vec4(mat[70]);
 	//normalize(texture(buffer3, tex_coord));
 	//fragcolor = vec4(1.0,1.0,0.0,1.0);
@@ -71,20 +71,23 @@ float activateFunc(float x) {
 vec4 Eval(vec3 normal, vec3 view, vec3 light, vec2 tex_coord){
 	vec4 color = vec4(1.0);
 
-	int widthT[6] = {6, 8, 8,8, 8, 3};
+	int widthT[6] = {6, 12, 12,  12,  12, 3};
+	//int widthT[10] = {2, 8, 8, 8, 8, 8, 8, 8, 8, 3};
 
 	float nodes[MAX_WIDTH][MAX_DEPTH];
-	nodes[0][1] = normal.y - aveIn[0];
-	nodes[0][0] = normal.x - aveIn[1];
-	nodes[0][2] = normal.z - aveIn[2];
-	nodes[0][3] = view.x - aveIn[3];
-	nodes[0][4] = view.y - aveIn[4];
-	nodes[0][5] = view.z - aveIn[5];
-//	nodes[0][6] = light.x;
-//	nodes[0][7] = light.y;
-//	nodes[0][8] = light.z;
-//	nodes[0][9] = tex_coord.x;
-//	nodes[0][10] = tex_coord.y;
+	nodes[0][0] = normal.x;// - aveIn[1];
+	nodes[0][1] = normal.y;// - aveIn[0];
+	nodes[0][2] = normal.z;// - aveIn[2];
+	nodes[0][3] = view.x;// - aveIn[3];
+	nodes[0][4] = view.y;// - aveIn[4];
+	nodes[0][5] = view.z;// - aveIn[5];
+	//nodes[0][7] = light.y;
+	//nodes[0][8] = light.z;
+	//nodes[0][6] = light.x;
+	//nodes[0][9] = tex_coord.x;
+	//nodes[0][10] = tex_coord.y;
+	//nodes[0][0] = tex_coord.x;
+	//nodes[0][1] = tex_coord.y;
 
 	int wShift = 0;
 	int bShift = 0;
@@ -105,13 +108,13 @@ vec4 Eval(vec3 normal, vec3 view, vec3 light, vec2 tex_coord){
 			if(n<depth)
 			nodes[n][i] = activateFunc(nodes[n][i]);
 		}
-		wShift += width[n-1]*width[n];
-		bShift += width[n];
+		wShift += widthT[n-1]*widthT[n];
+		bShift += widthT[n];
 	}
 
-	color.x = nodes[outL][0] + aveOut[0];
-	color.y = nodes[outL][1] + aveOut[1];
-	color.z = nodes[outL][2] + aveOut[2];
+	color.x = nodes[outL][0];// + aveOut[0];//10.*abs(mat[299]);//
+	color.y = nodes[outL][1];// + aveOut[1];//10.*abs(mat[299]);//
+	color.z = nodes[outL][2];// + aveOut[2];//10.*abs(mat[299]);//
 
 	return color;
 }

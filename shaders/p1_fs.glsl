@@ -63,7 +63,7 @@ vec4 shadingPhong(vec4 normal, vec4 view, vec4 light, vec4 amb)
     
     vec4 spec = specular * vec4(0.7);
     vec4 diff = diffuse * vec4(0.7);
-	vec4 ambi = ambient*amb;
+	vec4 ambi = ambient * vec4(0.7);//amb;
 
     return ambi+diff+spec;
 }

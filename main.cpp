@@ -72,7 +72,7 @@ static const std::string fragment_shader[NUM_PASS] = { "shaders/p1_fs.glsl", "sh
 int wIn = INPUT_DIM;
 int wOut = OUTPUT_DIM;
 int numHiddenLayer = 4;
-int wHidden = 8;
+int wHidden = 12;
 
 float maxVectorX[INPUT_DIM] = { 0 };
 float minVectorX[INPUT_DIM] = { 0 };
@@ -110,12 +110,13 @@ void draw_gui()
 
 	ImGui::Image((void*)texture_id, ImVec2(128.f, 128.f), ImVec2(0.0, 1.0), ImVec2(1.0, 0.0));
 
-	//ImGui::InputText("Filename", &fname[0], 50);
-	//ImGui::SameLine();
-	//if (ImGui::Button("Load"))
-	//{
-	//	fcnMat.ReadFromFile(string(fname));
-	//}
+
+	ImGui::InputText("Filename", &fname[0], 50);
+	ImGui::SameLine();
+	if (ImGui::Button("Load"))
+	{
+		fcnMat.ReadFromFile(string(fname));
+	}
 
 
 	ImGui::End();
@@ -128,8 +129,8 @@ void draw_gui()
 	}
    ImGui::End();
 
-   static bool show = false;
-   ImGui::ShowTestWindow();
+   //static bool show = false;
+   //ImGui::ShowTestWindow();
    ImGui::Render();
  }
 
@@ -229,7 +230,7 @@ float* arrangeBuffer(int wIn, int wOut, int wHidden, int numHiddenLayer) {
 }
 
 void CPUtest(int trainSize, int validSize) {
-	int batchSize = 100;
+	int batchSize = 50;
 
 	int depth = numHiddenLayer + 1;
 
@@ -251,9 +252,10 @@ void CPUtest(int trainSize, int validSize) {
 	network.SetTrainData(trainX, trainY, trainSize, batchSize);
 	network.SetValidData(validX, validY, validSize);
 
+	fcnMat.PassCtrlToShader();
+
 	network.TrainCPU();
 
-	fcnMat.PassCtrlToShader();
 	fcnMat.PassDataToShader();
 	fcnMat.WriteToFile();
 }
@@ -336,6 +338,7 @@ void loadBuffer() {
 				bufferX[n][4] = temp[1];
 				bufferX[n][5] = temp[2];//view
 				//bufferX[n][9] = temp[3];//texCoord.x
+				//bufferX[n][0] = temp[3];//texCoord.y;
 
 				//glReadBuffer(GL_COLOR_ATTACHMENT3);
 				//glPixelStorei(GL_PACK_ALIGNMENT, 3);
@@ -344,9 +347,11 @@ void loadBuffer() {
 				//bufferX[n][7] = temp[1];
 				//bufferX[n][8] = temp[2];//light
 				//bufferX[n][10] = temp[3];//texCoord.y
+				//bufferX[n][1] = temp[3];//texCoord.y;
 
 				//bufferX[n][11] = n;
 				bufferX[n][6] = n;
+				//bufferX[n][2] = n;
 
 				for (int i = 0; i < INPUT_DIM; i++) {
 					if (bufferX[n][i] > maxVectorX[i]) maxVectorX[i] = bufferX[n][i];
@@ -369,10 +374,10 @@ void loadBuffer() {
 				n++;
 			}
 			for (int i = 0; i < INPUT_DIM; i++) {
-				aveVectorX[i] = (maxVectorX[j] + minVectorX[j]) / 2;
+				aveVectorX[i] = 0;// (maxVectorX[j] + minVectorX[j]) / 2;
 			}
 			for (int i = 0; i < OUTPUT_DIM; i++) {
-				aveVectorY[i] = (maxVectorY[j] + minVectorY[j]) / 2;
+				aveVectorY[i] = 0;// (maxVectorY[j] + minVectorY[j]) / 2;
 			}
 			glBindFramebuffer(GL_FRAMEBUFFER, 0);			
 		}
@@ -494,7 +499,7 @@ void initOpenGl()
    //unbind the fbo
    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-   fcnMat.ReadFromFile("mats/mats201907181207.txt");
+   //fcnMat.ReadFromFile("mats/mats201907181207.txt");
    //for (int i = 0; i < 10; i++) {
 	  // mats[i] = float(i) / 9.f;
    //}
