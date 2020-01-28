@@ -36,6 +36,7 @@ struct DataNode {
 };
 
 struct FcnLayer {
+	int activateType = 2;
 	//Don't allocate memory here, do it in the network for continuous and stable memory allocation.
 	float** weight;
 	float* bias;
@@ -65,7 +66,9 @@ struct FcnLayer {
 	void Forward();
 	void Backward();
 	void AccuGrad();
-	void Adam(int t, float lr);
+
+	void AdamFixed(int t, float lr);
+	void Adam(int t, float beta1, float beta2, float alpha);
 
 	void ClearD();
 	void InitData();
@@ -122,7 +125,12 @@ public:
 	const int minEpochs = 10;
 
 	void TrainCPU();
+	void TrainCPU_1epoch(int n, float beta1, float beta2, float alpha);
+	bool TrainCPU_1batch(int num_batch, int num_epoch, float beta1, float beta2, float alpha);
+
 	float* Evaluate(float* x); //not used
+
+	void ForwardCS();
 
 	void SetTrainData(float** x, float** y, int size, int bSize);
 	void SetValidData(float** x, float** y, int size);
@@ -147,15 +155,19 @@ public:
 //	return (exp(x) - exp(-x)) / (exp(x) + exp(-x));
 //}
 
-float activateFunc(float x) {
-	//return (x > 0) ? x : 0;//relu
-	//return (x > 0) ? x : (0.05*x);//leaky relu
-	return tanh(x);//tanh 2.0 / (1.0 + exp(-2.0*x)) - 1.0;
+float activateFunc(float x, int type = 2) {
+	switch(type){
+	case 0: return (x > 0) ? x : 0; break;//relu
+	case 1: return (x > 0) ? x : (0.05*x); break;//leaky relu
+	case 2: return tanh(x); break;//tanh 2.0 / (1.0 + exp(-2.0*x)) - 1.0;
+	}
 };
-float dActivateFunc(float x) {
-	//return float(x>0);//drelu
-	//return (x > 0) ? 1.0 : 0.05;//d leaku relu
-	return 1 - tanh(x)*tanh(x);
+float dActivateFunc(float x, int type = 2) {
+	switch (type) {
+		case 0: return float(x>0);//drelu
+		case 1: return (x > 0) ? 1.0 : 0.05;//d leaku relu
+		case 2: return 1 - tanh(x)*tanh(x);
+	}
 };
 
 //----------------------------------------
@@ -267,7 +279,7 @@ void FcnLayer::Forward() {
 			bottom->zVec[i] += weight[i][j] * top->aVec[j];
 		}
 		bottom->zVec[i] += bias[i];
-		bottom->aVec[i] = activateFunc(bottom->zVec[i]);
+		bottom->aVec[i] = activateFunc(bottom->zVec[i],this->activateType);
 	}
 }
 
@@ -277,7 +289,7 @@ void FcnLayer::Backward() {
 		for (int i = 0; i < wBottom; i++) {
 			top->dVec[j] += weight[i][j] * bottom->dVec[i];
 		}
-		top->dVec[j] *= dActivateFunc(top->zVec[j]);
+		top->dVec[j] *= dActivateFunc(top->zVec[j], this->activateType);
 	}
 }
 
@@ -290,12 +302,37 @@ void FcnLayer::AccuGrad() {
 	}
 }
 
-void FcnLayer::Adam(int t, float lr) {
+void FcnLayer::AdamFixed(int t, float lr) {
 	const float bias_factor = 2.0f;
 	float mBeta1 = 0.9f;
 	float mBeta2 = 0.9f;//0.999f
 	float mAlpha = 0.0002f;//0.0005f
 	float mEps = 1e-8;
+
+	float hat1 = 1.0f / (1.0f - pow(mBeta1, t));
+	float hat2 = 1.0f / (1.0f - pow(mBeta2, t));
+
+	for (int i = 0; i < wBottom; i++) {
+		mbVec[i] = mBeta1* mbVec[i] + (1.0f - mBeta1)*dbVec[i];
+		vbVec[i] = mBeta2* vbVec[i] + (1.0f - mBeta2)* dbVec[i] * dbVec[i];
+		float deltaB = (hat1* mbVec[i]) / (sqrt(hat2* vbVec[i]) + mEps);
+		bias[i] -= bias_factor*mAlpha* deltaB;
+		for (int j = 0; j < wTop; j++) {
+			mMat[i][j] = mBeta1* mMat[i][j] + (1.0f - mBeta1)* dMat[i][j];
+			vMat[i][j] = mBeta2* vMat[i][j] + (1.0f - mBeta2)* dMat[i][j] * dMat[i][j];
+			float deltaW = (hat1* mMat[i][j]) / (sqrt(hat2* vMat[i][j]) + mEps);
+			weight[i][j] -= mAlpha* deltaW;
+		}
+	}
+}
+
+void FcnLayer::Adam(int t, float beta1 = 0.9f, float beta2 = 0.999f, float alpha = 0.002f) {
+	const float bias_factor = 2.0f;
+	float mEps = 1e-8;
+
+	float mBeta1 = beta1;
+	float mBeta2 = beta2;
+	float mAlpha = alpha;
 
 	float hat1 = 1.0f / (1.0f - pow(mBeta1, t));
 	float hat2 = 1.0f / (1.0f - pow(mBeta2, t));
@@ -437,6 +474,10 @@ float* Fcn::Evaluate(float* x) {
 	return nodes[depth].aVec;
 }
 
+void Fcn::ForwardCS() {
+
+}
+
 void Fcn::TrainCPU() {
 	if (finishFlag) {
 		for (int n = 0; n < maxEpochs; n++)
@@ -444,13 +485,15 @@ void Fcn::TrainCPU() {
 			for (int k = 0; k < ceil(dataSize / batchSize) + 1; k++) {
 				float error = 0;
 				int inputShift = (k*batchSize) % dataSize;
-//forward
+//Clear Derivative
 				for (int i = 0; i < depth; i++) {
 					layers[i].ClearD();
 				}
-
+//Data Preparation: loss vector, inner counter(no. in this batch)
+//					input:nodes[0].aVec, output groundtruth: nodes[depth].groundTruth
 				float* lossVec = new float[wOut]();
 				int noSample = 0;
+//Actual Training
 				for (int i = 0; i < batchSize; i++) {
 					if ((i + inputShift) >= dataSize)
 						break;
@@ -461,16 +504,18 @@ void Fcn::TrainCPU() {
 					for (int j = 0; j < wOut; j++) {
 						nodes[depth].groundTruth[j] = output[i + inputShift][j];
 					}
-
+//Forward: per layer
 					//nodes[0].printValue();
 					for (int j = 0; j < depth; j++) {
 						layers[j].Forward();
 						//layers[j].printPara();
 						//nodes[j + 1].printValue();
 					}
+//Loss calculation: MSE
 					for (int j = 0; j < wOut; j++) {
-						lossVec[j] += (nodes[depth].aVec[j] - nodes[depth].groundTruth[j])* dActivateFunc(nodes[depth].zVec[j]);
+						lossVec[j] += (nodes[depth].aVec[j] - nodes[depth].groundTruth[j])* dActivateFunc(nodes[depth].zVec[j], layers[depth-1].activateType);
 					}
+
 					noSample++;
 				}
 //mini batch BP
@@ -485,7 +530,7 @@ void Fcn::TrainCPU() {
 				for (int j = 0; j < depth; j++) {
 					layers[j].AccuGrad();
 					//layers[j].printDMat();
-					layers[j].Adam(2*k + 1, 0.00005f);
+					layers[j].AdamFixed(2*k + 1, 0.00005f);
 				}
 
 				for (int i = 0; i < batchSize; i++) {
@@ -551,10 +596,10 @@ void Fcn::TrainCPU() {
 					for (int jj = 0; jj < depth; jj++) {
 						layers[jj].Forward();
 					}
-					//for (int jj = 0; jj < nodes[depth].width; jj++) {
-					//	string channel[3] = { "R: ", "G: ", "B: " };
-					//	cout << channel[jj] << nodes[depth].aVec[jj] << "\t" << nodes[depth].groundTruth[jj] << endl;
-					//}
+					for (int jj = 0; jj < nodes[depth].width; jj++) {
+						string channel[3] = { "R: ", "G: ", "B: " };
+						cout << channel[jj] << nodes[depth].aVec[jj] << "\t" << nodes[depth].groundTruth[jj] << endl;
+					}
 				}
 				cout << "------------------------------------------" << endl;
 				cout << "Min Validation Loss: " << noMin << endl;
@@ -568,10 +613,344 @@ void Fcn::TrainCPU() {
 				noMin = n;
 			}
 		}
-		int aa = 0;
 }
 	else cout << "Network not finished." << endl;
 }
+
+void Fcn::TrainCPU_1epoch(int n, float beta1GUI = 0.9f, float beta2GUI = 0.999f, float alphaGUI = 0.0001f) {
+	if (finishFlag) {
+		cout << endl;
+		float beta1 = beta1GUI;
+		float beta2 = beta2GUI;
+		float alpha = alphaGUI;
+
+		for (int k = 0; k < ceil(dataSize / batchSize) + 1; k++) {
+			float error = 0;
+			int inputShift = (k*batchSize) % dataSize;
+			//forward
+			for (int i = 0; i < depth; i++) {
+				layers[i].ClearD();
+			}
+
+			float* lossVec = new float[wOut]();
+			int noSample = 0;
+			for (int i = 0; i < batchSize; i++) {
+				if ((i + inputShift) >= dataSize)
+					break;
+				for (int j = 0; j < wIn; j++) {
+					nodes[0].aVec[j] = input[i + inputShift][j];
+					//cout << i+inputShift << endl;
+				}
+				for (int j = 0; j < wOut; j++) {
+					nodes[depth].groundTruth[j] = output[i + inputShift][j];
+				}
+
+				//nodes[0].printValue();
+				for (int j = 0; j < depth; j++) {
+					layers[j].Forward();
+					//layers[j].printPara();
+					//nodes[j + 1].printValue();
+				}
+				for (int j = 0; j < wOut; j++) {
+					lossVec[j] += (nodes[depth].aVec[j] - nodes[depth].groundTruth[j])* dActivateFunc(nodes[depth].zVec[j], layers[depth-1].activateType);
+				}
+				noSample++;
+			}
+
+			//mini batch BP
+			for (int j = 0; j < wOut; j++) {
+				nodes[depth].dVec[j] = lossVec[j] / noSample;
+			}
+			//nodes[depth].printDiff();
+			for (int j = depth - 1; j >= 0; j--) {
+				layers[j].Backward();
+				//nodes[j].printDiff();
+			}
+			for (int j = 0; j < depth; j++) {
+				layers[j].AccuGrad();
+				//layers[j].printDMat();
+				layers[j].Adam(k + 1, beta1, beta2, alpha);
+			}
+
+			for (int i = 0; i < batchSize; i++) {
+				for (int j = 0; j < depth; j++) {
+					layers[j].Forward();
+				}
+
+				for (int j = 0; j < nodes[depth].width; j++) {
+					error += (nodes[depth].aVec[j] - nodes[depth].groundTruth[j])* (nodes[depth].aVec[j] - nodes[depth].groundTruth[j]) / wOut;
+				}
+			}
+			error = error / noSample;
+			error = sqrt(error);
+			trainErrors.push_back(error);
+
+
+			//cout << "\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b";
+			//cout << "\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b";
+			cout << "LOSS:\t" << fixed << setprecision(6) << error << endl;// << ", " << nodes[depth].aVec[0] - nodes[depth].groundTruth[0] << ", " << nodes[depth].aVec[1] - nodes[depth].groundTruth[1] << ", " << nodes[depth].aVec[2] - nodes[depth].groundTruth[2];
+
+			delete[] lossVec;
+		}
+
+		for (int jj = 0; jj < depth; jj++) {
+			layers[jj].printPara();
+		}
+		//validation
+		cout << endl;
+		float error = 0;
+		for (int ii = 0; ii < validSize; ii++) {
+			//nodes[0].aVec = testIn[ii];
+			//nodes[depth].groundTruth = testOut[ii];
+			for (int j = 0; j < wIn; j++) {
+				nodes[0].aVec[j] = testIn[ii][j];
+			}
+			for (int j = 0; j < wOut; j++) {
+				nodes[depth].groundTruth[j] = testOut[ii][j];
+			}
+			//for (int jj = 0; jj < validSize; jj++) {
+			for (int jj = 0; jj < depth; jj++) {
+				layers[jj].Forward();
+			}
+			for (int jj = 0; jj < nodes[depth].width; jj++) {
+				error += (nodes[depth].aVec[jj] - nodes[depth].groundTruth[jj])* (nodes[depth].aVec[jj] - nodes[depth].groundTruth[jj]) / wOut;
+			}
+			//}
+		}
+		error = error / validSize;
+		error = sqrt(error);
+		validErrors.push_back(error);
+		cout << "VALID_LOSS:\t" << error << "\t" << n << endl;
+
+
+		if (validErrors[validErrors.size() - 1] >= validErrors[validErrors.size() - 2]
+			&& validErrors[validErrors.size() - 2] >= validErrors[validErrors.size() - 3]
+			&& n > minEpochs) {
+			for (int i = 0; i < matSize; i++) {
+				matPt[i] = matMin[i];
+			}
+
+			cout << "------------------------------------------" << endl;
+			for (int ii = 0; ii < validSize; ii++) {
+				for (int j = 0; j < wIn; j++) {
+					nodes[0].aVec[j] = testIn[ii][j];
+				}
+				for (int j = 0; j < wOut; j++) {
+					nodes[depth].groundTruth[j] = testOut[ii][j];
+				}
+				for (int jj = 0; jj < depth; jj++) {
+					layers[jj].Forward();
+				}
+				for (int jj = 0; jj < nodes[depth].width; jj++) {
+					string channel[3] = { "R: ", "G: ", "B: " };
+					//cout << channel[jj] << nodes[depth].aVec[jj] << "\t" << nodes[depth].groundTruth[jj] << endl;
+				}
+			}
+			cout << "------------------------------------------" << endl;
+			cout << "Min Validation Loss: " << noMin << endl;
+
+			return;
+		}
+		else if (validErrors[validErrors.size() - 1] <= validErrors[validErrors.size() - 2]) {
+			for (int i = 0; i < matSize; i++) {
+				matMin[i] = matPt[i];
+			}
+			noMin = n;
+		}
+
+	}
+	else cout << "Network not finished." << endl;
+}
+
+bool Fcn::TrainCPU_1batch(int num_batch, int num_epoch, float beta1GUI = 0.9f, float beta2GUI = 0.999f, float alphaGUI = 0.0001f) {
+	if (finishFlag) {
+		float beta1 = beta1GUI;
+		float beta2 = beta2GUI;
+		float alpha = alphaGUI;
+
+		bool firstBatch = (num_batch == 0);
+		bool lastBatch = FALSE;
+
+		if (firstBatch) {
+			for (int i = 0; i < depth; i++) {
+				layers[i].ClearD();
+			}
+		}
+		//train
+		{
+			int inputShift = (num_batch * batchSize) % dataSize;
+
+			//data preparation
+			float* lossVec = new float[wOut]();
+			int noSample = 0;
+			float error = 0;
+			for (int i = 0; i < batchSize; i++) {
+				if ((i + inputShift) >= dataSize) {
+					lastBatch = TRUE;  break;
+				}
+				for (int j = 0; j < wIn; j++) {
+					nodes[0].aVec[j] = input[i + inputShift][j];
+					//cout << i+inputShift << endl;
+				}
+				for (int j = 0; j < wOut; j++) {
+					nodes[depth].groundTruth[j] = output[i + inputShift][j];
+				}
+
+				//forward
+				for (int i = 0; i < depth; i++) {
+					layers[i].ClearD();
+				}
+				//nodes[0].printValue();
+				for (int j = 0; j < depth; j++) {
+					layers[j].Forward();
+					//layers[j].printPara();
+					//nodes[j + 1].printValue();
+				}
+				for (int j = 0; j < wOut; j++) {
+					lossVec[j] += (nodes[depth].aVec[j] - nodes[depth].groundTruth[j])* dActivateFunc(nodes[depth].zVec[j], layers[depth-1].activateType);
+				}
+				noSample++;
+			}
+			//if (firstBatch)		cout << endl;
+
+			//mini batch BP
+			for (int j = 0; j < wOut; j++) {
+				nodes[depth].dVec[j] = lossVec[j] / noSample;
+			}
+			//nodes[depth].printDiff();
+			for (int j = depth - 1; j >= 0; j--) {
+				layers[j].Backward();
+				//nodes[j].printDiff();
+			}
+			for (int j = 0; j < depth; j++) {
+				layers[j].AccuGrad();
+				//layers[j].printDMat();
+				layers[j].Adam(num_batch + 1, beta1, beta2, alpha);//£¿£¿£¿
+			}
+
+			//Calculate Loss
+			for (int i = 0; i < batchSize; i++) {
+				for (int j = 0; j < depth; j++) {
+					layers[j].Forward();
+				}
+
+				for (int j = 0; j < nodes[depth].width; j++) {
+					error += (nodes[depth].aVec[j] - nodes[depth].groundTruth[j])* (nodes[depth].aVec[j] - nodes[depth].groundTruth[j]) / wOut;
+				}
+			}
+			error = error / noSample;
+			error = sqrt(error);
+			trainErrors.push_back(error);
+
+			cout << "\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b";
+			//cout << "\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b";
+			cout << "LOSS:\t" << fixed << setprecision(6) << error;// << ", " << nodes[depth].aVec[0] - nodes[depth].groundTruth[0] << ", " << nodes[depth].aVec[1] - nodes[depth].groundTruth[1] << ", " << nodes[depth].aVec[2] - nodes[depth].groundTruth[2];
+
+			delete[] lossVec;
+
+			//for (int jj = 0; jj < depth; jj++) {
+			//	layers[jj].printPara();
+			//}
+		}
+		//validation
+		if (lastBatch)
+		{
+			cout << endl;
+
+			float error = 0;
+			for (int i = 0; i < dataSize; i++) {
+				for (int j = 0; j < wIn; j++) {
+					nodes[0].aVec[j] = input[i][j];
+				}
+				for (int j = 0; j < wOut; j++) {
+					nodes[depth].groundTruth[j] = output[i][j];
+				}
+				for (int j = 0; j < depth; j++) {
+					layers[j].Forward();
+				}
+				for (int j = 0; j < nodes[depth].width; j++) {
+					error += (nodes[depth].aVec[j] - nodes[depth].groundTruth[j])* (nodes[depth].aVec[j] - nodes[depth].groundTruth[j]) / wOut;
+				}
+			}
+			error = error / dataSize;
+			error = sqrt(error);
+			trainErrors.push_back(error);
+
+			//cout << "\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b";
+			//cout << "\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b";
+			cout << "TRAIN_LOSS:\t" << fixed << setprecision(6) << error << endl;// << ", " << nodes[depth].aVec[0] - nodes[depth].groundTruth[0] << ", " << nodes[depth].aVec[1] - nodes[depth].groundTruth[1] << ", " << nodes[depth].aVec[2] - nodes[depth].groundTruth[2];
+
+
+			//Cout << endl;
+			error = 0;
+			for (int ii = 0; ii < validSize; ii++) {
+				//nodes[0].aVec = testIn[ii];
+				//nodes[depth].groundTruth = testOut[ii];
+				for (int j = 0; j < wIn; j++) {
+					nodes[0].aVec[j] = testIn[ii][j];
+				}
+				for (int j = 0; j < wOut; j++) {
+					nodes[depth].groundTruth[j] = testOut[ii][j];
+				}
+				//for (int jj = 0; jj < validSize; jj++) {
+				for (int jj = 0; jj < depth; jj++) {
+					layers[jj].Forward();
+				}
+				for (int jj = 0; jj < nodes[depth].width; jj++) {
+					error += (nodes[depth].aVec[jj] - nodes[depth].groundTruth[jj])* (nodes[depth].aVec[jj] - nodes[depth].groundTruth[jj]) / wOut;
+				}
+				//}
+			}
+			error = error / validSize;
+			error = sqrt(error);
+			validErrors.push_back(error);
+			cout << "VALID_LOSS:\t" << error << "\t" << num_epoch << endl;
+			cout << "------------------------------------------" << endl;
+
+
+			if (validErrors[validErrors.size() - 1] >= validErrors[validErrors.size() - 2]
+				&& validErrors[validErrors.size() - 2] >= validErrors[validErrors.size() - 3]
+				&& num_epoch > minEpochs) {
+				for (int i = 0; i < matSize; i++) {
+					matPt[i] = matMin[i];
+				}
+
+				cout << "------------------------------------------" << endl;
+				for (int ii = 0; ii < validSize; ii++) {
+					for (int j = 0; j < wIn; j++) {
+						nodes[0].aVec[j] = testIn[ii][j];
+					}
+					for (int j = 0; j < wOut; j++) {
+						nodes[depth].groundTruth[j] = testOut[ii][j];
+					}
+					for (int jj = 0; jj < depth; jj++) {
+						layers[jj].Forward();
+					}
+					for (int jj = 0; jj < nodes[depth].width; jj++) {
+						string channel[3] = { "R: ", "G: ", "B: " };
+						//cout << channel[jj] << nodes[depth].aVec[jj] << "\t" << nodes[depth].groundTruth[jj] << endl;
+					}
+				}
+				cout << "------------------------------------------" << endl;
+				cout << "Min Validation Loss: " << noMin << endl;
+
+				return lastBatch;
+			}
+			else if (validErrors[validErrors.size() - 1] <= validErrors[validErrors.size() - 2]) {
+				for (int i = 0; i < matSize; i++) {
+					matMin[i] = matPt[i];
+				}
+				noMin = num_epoch;
+			}
+		}
+		return lastBatch;
+	}
+	else{
+		cout << "Network not finished." << endl;
+		return FALSE;
+	}
+}
+
 
 Fcn::Fcn(int wX, int wY) {
 	wIn = wX;

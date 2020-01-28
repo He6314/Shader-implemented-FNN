@@ -94,16 +94,25 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="shaders\p1_fs.glsl">
+    <None Include="shaders\Phong_vs.glsl">
       <Filter>shaders</Filter>
     </None>
-    <None Include="shaders\p2_vs.glsl">
+    <None Include="shaders\Phong_fs.glsl">
       <Filter>shaders</Filter>
     </None>
-    <None Include="shaders\p1_vs.glsl">
+    <None Include="shaders\network_fs.glsl">
       <Filter>shaders</Filter>
     </None>
-    <None Include="shaders\p2_fs.glsl">
+    <None Include="shaders\network_vs.glsl">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="shaders\testQuad_fs.glsl">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="shaders\testQuad_vs.glsl">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="shaders\fw_cs.glsl">
       <Filter>shaders</Filter>
     </None>
   </ItemGroup>

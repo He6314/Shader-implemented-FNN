@@ -28,6 +28,7 @@
 #define PI 3.141592653589793f
 
 static const std::string mesh_name = "models/BLJ/BlackLeatherJacket.obj";
+//static const std::string mesh_name = "models/sphere.obj";
 static const std::string texture_name = "models/BLJ/Main Texture/[Albedo].jpg";
 
 float time_sec = 0.0f;
@@ -41,15 +42,17 @@ float posX = 0.4f;//0.0f;
 float posZ = 0.7f;//0.0f;
 
 const int NUM_BUFFERS = 4;
-const int NUM_PASS = 2;
+const int NUM_PASS = 3;
 
 const int MAX_PIXEL = 1000000;
 const int INPUT_DIM = 6;
-const int OUTPUT_DIM = 3;
+const int OUTPUT_DIM =  3;//1;//
 
 GLuint paraBuffers[NUM_BUFFERS] = { -1 };
 GLuint fbo = -1;
 GLuint depth_rbo;
+
+int num_sample = 0;
 
 GLfloat bufferValue[NUM_BUFFERS][4];
 float bufferX[MAX_PIXEL][INPUT_DIM+1] = { 0 }; // 3 for normal, 3 for view, 3 for light direction, 2 for texCoord, 1 for index;
@@ -63,16 +66,24 @@ float** validY;
 GLuint shader_program[NUM_PASS] = { -1 };
 GLuint texture_id = -1;
 
+GLuint foward_shader = -1;
+
 MeshData mesh_data;
 GLuint quad_vao;
 
-static const std::string vertex_shader[NUM_PASS] = { "shaders/p1_vs.glsl", "shaders/p2_vs.glsl" };
-static const std::string fragment_shader[NUM_PASS] = { "shaders/p1_fs.glsl", "shaders/p2_fs.glsl" };
+static const std::string vertex_shader[NUM_PASS] = { "shaders/Phong_vs.glsl", "shaders/network_vs.glsl" , "shaders/testQuad_vs.glsl" };
+static const std::string fragment_shader[NUM_PASS] = { "shaders/Phong_fs.glsl", "shaders/network_fs.glsl",  "shaders/testQuad_fs.glsl" };
 
 int wIn = INPUT_DIM;
 int wOut = OUTPUT_DIM;
-int numHiddenLayer = 4;
-int wHidden = 12;
+int numHiddenLayer = 8; //6;// 12;//5; //
+int wHidden = 8; // 6;//5;//  4; // 12; // 10;//8;//
+float alpha = 0.00003f;// 0.00025f;the first that works
+
+int quadIn = 2;
+int quadOut = 3;
+int quadNoHiddenLayer = 4;
+int quadWHidden = 8;
 
 float maxVectorX[INPUT_DIM] = { 0 };
 float minVectorX[INPUT_DIM] = { 0 };
@@ -82,8 +93,36 @@ float minVectorY[OUTPUT_DIM] = { 0 };
 float aveVectorX[INPUT_DIM] = { 0 };
 float aveVectorY[OUTPUT_DIM] = { 0 };
 
+Fcn network(wIn, wOut);
 FcnSSBO fcnMat(wIn, wOut, wHidden, numHiddenLayer);
+AveVectorUBO aves(aveVectorX, INPUT_DIM, aveVectorY, OUTPUT_DIM);
+
+Fcn quadNetwork(2, 3);
+FcnSSBO quadMat(2, 3, 8, 8);
+
 char* fname = new char[50];
+
+int nbEpoch = 0;
+int nbBatch = 0;
+bool trainFlag = FALSE;
+float beta1 = 0.5f;
+float beta2 = 0.5f;//distfunc
+//alpha
+int batchSize = 32;
+
+bool testQuad = FALSE;
+
+int interactLayer = 0;
+int interactWeight1 = 0;
+int interactWeight2 = 0;
+int interactBias = 0;
+bool ctrlBias = FALSE;
+bool debugData = FALSE;
+int debugDepthInd = 0;
+int debugWidthInd = 0;
+int debugBiasInd = 0;
+
+bool randomArt = FALSE;
 
 void reload_shader();
 
@@ -91,7 +130,7 @@ void draw_gui()
 {
 	ImGui_ImplGlut_NewFrame();
 
-	ImGui::SetNextWindowPos(ImVec2(0, 0));
+	//ImGui::SetNextWindowPos(ImVec2(0, 0));
 	ImGui::Begin("Basic options");
 	if (ImGui::Button("Reload Shader"))
 	{
@@ -117,14 +156,61 @@ void draw_gui()
 	{
 		fcnMat.ReadFromFile(string(fname));
 	}
-
-
 	ImGui::End();
 
-	ImGui::SetNextWindowPos(ImVec2(875, 0));
+	ImGui::Begin("Training Paras");
+	ImGui::SliderInt("Batch Size", &batchSize, 1, 128);
+	ImGui::SliderFloat("Beta1", &beta1, 0.1f, 1.f- 1e-5,  "%.5f", 2.5f);
+	ImGui::SliderFloat("Beta2", &beta2, 0.1f, 1.f- 1e-5, "%.5f", 2.5f);
+	ImGui::SliderFloat("Alpha", &alpha, 1e-8, 1e-2, "%.5f", 2.5f);
+	ImGui::Checkbox("Simple Quad", &testQuad);
+	ImGui::End();
+
+	if (!testQuad) {
+		ImGui::Begin("Handles");
+		ImGui::SliderInt("Layer", &interactLayer, 0, fcnMat.Depth()-1);
+		ImGui::SliderInt("From", &interactWeight1, 0, fcnMat.Width(interactLayer) - 1);
+		ImGui::SliderInt("To", &interactWeight2, 0, fcnMat.Width(interactLayer + 1) - 1);
+		ImGui::Checkbox("Ctrl Bias", &ctrlBias); ImGui::SameLine();
+		ImGui::SliderInt("Bias", &interactBias, 0, fcnMat.Width(interactLayer + 1) - 1);
+		int interLoc = 0;
+		if (!ctrlBias) interLoc = fcnMat.Index(0, interactLayer, interactWeight1, interactWeight2);
+		else interLoc = fcnMat.Index(1, interactLayer, interactBias);
+
+		float* value = fcnMat.Mats(interLoc);
+		ImGui::SliderFloat("Value", value, -.95f, .95f);
+
+		ImGui::Checkbox("Debug", &debugData);
+		if (debugData) {
+			glUniform1i(91, 1);
+			glUniform1i(92, interactLayer);
+			glUniform1i(93, interactWeight1);
+			glUniform1i(94, interactWeight2);
+			glUniform1i(95, interactBias);
+		}
+		else glUniform1i(91, 0);
+
+		ImGui::End();
+	}
+	else {
+		ImGui::Begin("Handles");
+		ImGui::SliderInt("Layer", &interactLayer, 0, quadMat.Depth()-1);
+		ImGui::SliderInt("From", &interactWeight1, 0, quadMat.Width(interactLayer) - 1);
+		ImGui::SliderInt("To", &interactWeight2, 0, quadMat.Width(interactLayer + 1) - 1);
+		ImGui::Checkbox("Ctrl Bias", &ctrlBias); ImGui::SameLine();
+		ImGui::SliderInt("Bias", &interactBias, 0, quadMat.Width(interactLayer + 1) - 1);
+		int interLoc = 0;
+		if (!ctrlBias) interLoc = quadMat.Index(0, interactLayer, interactWeight1, interactWeight2);
+		else interLoc = quadMat.Index(1, interactLayer, interactBias);
+		float* value = quadMat.Mats(interLoc);
+		ImGui::SliderFloat("Value", value, -.95f, .95f);
+		ImGui::End();
+	}
+
+	//ImGui::SetNextWindowPos(ImVec2(875, 0));
 	ImGui::Begin("Buffers");
 	for (int i = 0; i < NUM_BUFFERS; i++) {
-		ImGui::Image((void*)paraBuffers[i], ImVec2(400.f, 225.f), ImVec2(0.0, 1.0), ImVec2(1.0, 0.0));
+		ImGui::Image((void*)paraBuffers[i], ImVec2(200.f, 200.f), ImVec2(0.0, 1.0), ImVec2(1.0, 0.0));
 		ImGui::NewLine();
 	}
    ImGui::End();
@@ -142,87 +228,162 @@ void display()
    const int h = glutGet(GLUT_WINDOW_HEIGHT);
    const float aspect_ratio = float(w) / float(h);
 
-   TransUBO matsUBO;
-   matsUBO.mats.M =
-	   glm::rotate(angleX, glm::vec3(1.0f, 0.0f, 0.0f))*
-	   glm::rotate(angleY, glm::vec3(0.0f, 1.0f, 0.0f))*
-	   glm::rotate(angleZ, glm::vec3(0.0f, 0.0f, 1.0f))*
-	   glm::translate(glm::vec3(posX,posY-1.0f,posZ))*
-	   glm::scale(glm::vec3(mesh_data.mScaleFactor));
-   matsUBO.mats.V = glm::lookAt(glm::vec3(0.0f, 1.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-   matsUBO.mats.P = glm::perspective(3.141592f / 4.0f, aspect_ratio, 0.1f, 100.0f);
-   glm::mat4 PVM = matsUBO.mats.P*matsUBO.mats.V*matsUBO.mats.M;
+   glUseProgram(foward_shader);
+   fcnMat.PassCtrlToShader();
+   fcnMat.PassDataToShader();
+   glDispatchCompute(8, 1, 1);
+   //glMemoryBarrier(GL_ALL_BARRIER_BITS);
 
-/*/////////////////////////////////////
-   PASS1
-/////////////////////////////////////*/
-   glUseProgram(shader_program[0]);
+   //一令一动-----------------------------------------------------
+   if (trainFlag && nbEpoch < 800) {
+	//------------------------------------------------------------
 
-   glBindFramebuffer(GL_FRAMEBUFFER, fbo); // Render to FBO, all gbuffer textures
-   const GLenum drawBuffers[NUM_BUFFERS] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2, GL_COLOR_ATTACHMENT3};
-   glDrawBuffers(NUM_BUFFERS, drawBuffers);
-   glClearColor(0.3f, 0.5f, 0.5f, 0.0f);
-   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	//-------------------------------------------------------------
+	   bool completeEpoch = network.TrainCPU_1batch(nbBatch, nbEpoch, beta1, beta2, alpha);
+	   nbBatch++;
+	   if (completeEpoch) {
+		   nbEpoch++;
+		   nbBatch = 0;
+	   }
+	   if (nbEpoch >= 800) {
+		   nbEpoch = 0;
+		   fcnMat.WriteToFile();
+		   trainFlag = false;
+	   }
+   }
+   fcnMat.PassDataToShader();
+   //=============================================================
 
-   glActiveTexture(GL_TEXTURE0);
-   glBindTexture(GL_TEXTURE_2D, texture_id);
-   int tex_loc = glGetUniformLocation(shader_program[0], "diffuse_color");
-   glUniform1i(tex_loc, 0); // we bound our texture to texture unit 0  
-   matsUBO.PassDataToShader();
+   if (!testQuad)
+   {
+	   TransUBO transUBO;
+	   transUBO.mats.M =
+		   glm::rotate(angleX, glm::vec3(1.0f, 0.0f, 0.0f))*
+		   glm::rotate(angleY, glm::vec3(0.0f, 1.0f, 0.0f))*
+		   glm::rotate(angleZ, glm::vec3(0.0f, 0.0f, 1.0f))*
+		   glm::translate(glm::vec3(posX, posY - 1.0f, posZ))*
+		   glm::scale(glm::vec3(mesh_data.mScaleFactor));
+	   transUBO.mats.V = glm::lookAt(glm::vec3(0.0f, 1.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+	   transUBO.mats.P = glm::perspective(3.141592f / 4.0f, aspect_ratio, 0.1f, 100.0f);
+	   glm::mat4 PVM = transUBO.mats.P*transUBO.mats.V*transUBO.mats.M;
 
-   glBindVertexArray(mesh_data.mVao);
-   mesh_data.DrawMesh();
-   //glDrawElements(GL_TRIANGLES, mesh_data.mNumIndices, GL_UNSIGNED_INT, 0);
+	   /*/////////////////////////////////////
+		  PASS1
+	   /////////////////////////////////////*/
+	   glUseProgram(shader_program[0]);
 
-/*/////////////////////////////////////
-   PASS2
-/////////////////////////////////////*/
-   glUseProgram(shader_program[1]);
-   glBindFramebuffer(GL_FRAMEBUFFER, 0);
-   glDrawBuffer(GL_BACK);
+	   glBindFramebuffer(GL_FRAMEBUFFER, fbo); // Render to FBO, all gbuffer textures
+	   const GLenum drawBuffers[NUM_BUFFERS] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2, GL_COLOR_ATTACHMENT3 };
+	   glDrawBuffers(NUM_BUFFERS, drawBuffers);
+	   glClearColor(0.3f, 0.5f, 0.5f, 0.0f);
+	   //glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+	   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-   glClearColor(0.35f, 0.35f, 0.35f, 0.0f);
+	   glActiveTexture(GL_TEXTURE0);
+	   glBindTexture(GL_TEXTURE_2D, texture_id);
+	   int tex_loc = glGetUniformLocation(shader_program[0], "diffuse_color");
+	   glUniform1i(tex_loc, 0); // we bound our texture to texture unit 0  
+	   transUBO.PassDataToShader();
 
-   //for (int i = 0; i < NUM_BUFFERS; i++) {
-	  // glActiveTexture(GL_TEXTURE0);
-	  // int bufferLoc = 11 + i;
-	  // glBindTexture(GL_TEXTURE_2D, paraBuffers[i]);
-	  // glUniform1i(bufferLoc, i);
-   //}
+	   glBindVertexArray(mesh_data.mVao);
+	   mesh_data.DrawMesh();
+	   //glDrawElements(GL_TRIANGLES, mesh_data.mNumIndices, GL_UNSIGNED_INT, 0);
 
-   glActiveTexture(GL_TEXTURE0);
-   glBindTexture(GL_TEXTURE_2D, paraBuffers[0]);
-   glUniform1i(10, 0);
+	/*/////////////////////////////////////
+	   PASS2
+	/////////////////////////////////////*/
+//=========================================================
+	   //GLuint64 startTime, stopTime;
+	   //unsigned int queryID[2];
+	   //glGenQueries(2, queryID);
+		  // glQueryCounter(queryID[0], GL_TIMESTAMP);
+//========================================================
 
-   glActiveTexture(GL_TEXTURE1);
-   glBindTexture(GL_TEXTURE_2D, paraBuffers[1]);
-   glUniform1i(11, 1);
+	   glUseProgram(shader_program[1]);
+	   glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	   glDrawBuffer(GL_BACK);
 
-   glActiveTexture(GL_TEXTURE2);
-   glBindTexture(GL_TEXTURE_2D, paraBuffers[2]);
-   glUniform1i(12, 2);
+	   glClearColor(0.35f, 0.35f, 0.35f, 0.0f);
 
-   glActiveTexture(GL_TEXTURE3);
-   glBindTexture(GL_TEXTURE_2D, paraBuffers[3]);
-   glUniform1i(13, 3);
+	   //for (int i = 0; i < NUM_BUFFERS; i++) {
+		  // glActiveTexture(GL_TEXTURE0);
+		  // int bufferLoc = 11 + i;
+		  // glBindTexture(GL_TEXTURE_2D, paraBuffers[i]);
+		  // glUniform1i(bufferLoc, i);
+	   //}
 
-   matsUBO.PassDataToShader();
-   AveVectorUBO aves(aveVectorX, INPUT_DIM, aveVectorY, OUTPUT_DIM);
+	   //------------TEMP---------------------
+	   glActiveTexture(GL_TEXTURE10);
+	   glBindTexture(GL_TEXTURE_2D, texture_id);
+	   tex_loc = glGetUniformLocation(shader_program[1], "ambTexture");
+	   glUniform1i(tex_loc, 10);
+	   //-------------------------------------
 
-   glDepthMask(GL_FALSE);
-   glBindVertexArray(quad_vao);
-   glDrawArrays(GL_TRIANGLE_STRIP, 0, 4); 
-   glBindVertexArray(0);
-   glDepthMask(GL_TRUE);
+	   glActiveTexture(GL_TEXTURE0);
+	   glBindTexture(GL_TEXTURE_2D, paraBuffers[0]);
+	   glUniform1i(10, 0);
+
+	   glActiveTexture(GL_TEXTURE1);
+	   glBindTexture(GL_TEXTURE_2D, paraBuffers[1]);
+	   glUniform1i(11, 1);
+
+	   glActiveTexture(GL_TEXTURE2);
+	   glBindTexture(GL_TEXTURE_2D, paraBuffers[2]);
+	   glUniform1i(12, 2);
+
+	   glActiveTexture(GL_TEXTURE3);
+	   glBindTexture(GL_TEXTURE_2D, paraBuffers[3]);
+	   glUniform1i(13, 3);
+
+	   transUBO.PassDataToShader();
+	   aves.PassDataToShader(aveVectorX, aveVectorY);
+
+	   glDepthMask(GL_FALSE);
+	   glBindVertexArray(quad_vao);
+	   glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+	   glBindVertexArray(0);
+	   glDepthMask(GL_TRUE);
+
+//===========================================================================================
+	   //glQueryCounter(queryID[1], GL_TIMESTAMP);
+	   //GLint stopTimerAvailable = 0;
+	   //while (!stopTimerAvailable) {
+		  // glGetQueryObjectiv(queryID[1],
+			 //  GL_QUERY_RESULT_AVAILABLE,
+			 //  &stopTimerAvailable);
+	   //}
+
+	   //glGetQueryObjectui64v(queryID[0], GL_QUERY_RESULT, &startTime);
+	   //glGetQueryObjectui64v(queryID[1], GL_QUERY_RESULT, &stopTime);
+	   //printf("Time spent on the GPU: %f ms\n", (stopTime - startTime) / 1000000.0);
+//===========================================================================================
+   }
+   
+   else {
+	   glUseProgram(shader_program[2]);
+	   glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	   glDrawBuffer(GL_BACK);
+	   glClearColor(0.35f, 0.35f, 0.35f, 0.0f);
+
+	   quadMat.PassCtrlToShader();
+	   quadMat.PassDataToShader();
+
+	   glDepthMask(GL_FALSE);
+	   glBindVertexArray(quad_vao);
+	   glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+	   glBindVertexArray(0);
+	   glDepthMask(GL_TRUE);
+   }
 
    draw_gui();
-
    glutSwapBuffers();
+
+
 }
 
 float* arrangeBuffer(int wIn, int wOut, int wHidden, int numHiddenLayer) {
-	int weightSize = wIn*wHidden + wOut*wHidden + (numHiddenLayer-1)*wHidden*wHidden;
-	int biasSize = wOut + numHiddenLayer*wHidden;
+	int weightSize = fcnMat.wSize; //wIn*wHidden + wOut*wHidden + (numHiddenLayer-1)*wHidden*wHidden;
+	int biasSize = fcnMat.bSize;// wOut + numHiddenLayer*wHidden;
 	int paraSize = weightSize + biasSize;
 
 	float* loc = new float[paraSize];
@@ -230,34 +391,14 @@ float* arrangeBuffer(int wIn, int wOut, int wHidden, int numHiddenLayer) {
 }
 
 void CPUtest(int trainSize, int validSize) {
-	int batchSize = 50;
-
-	int depth = numHiddenLayer + 1;
-
-	int weightSize = wIn*wHidden + wOut*wHidden + (numHiddenLayer-1)*wHidden*wHidden;
-	int biasSize = wOut + numHiddenLayer*wHidden;
-	int paraSize = weightSize + biasSize;
-
-	
-	float* loc = fcnMat.Mats();//arrangeBuffer(wIn, wOut, wHidden, numHiddenLayer);// new float[paraSize];
-	float* biasLoc = loc + weightSize; //这个计算没问题。sizeof float = 64， weightSize = 0x500
-
-	Fcn network(wIn, wOut);
-
-	for (int i = 0; i < numHiddenLayer; i++) {
-		network.AddFCNlayer(wHidden);
-	}
-
-	network.Finish(loc, biasLoc);
 	network.SetTrainData(trainX, trainY, trainSize, batchSize);
 	network.SetValidData(validX, validY, validSize);
+	trainFlag = true;
 
-	fcnMat.PassCtrlToShader();
-
-	network.TrainCPU();
-
-	fcnMat.PassDataToShader();
-	fcnMat.WriteToFile();
+	//network.TrainCPU();
+	//fcnMat.PassCtrlToShader();
+	//fcnMat.PassDataToShader();
+	//fcnMat.WriteToFile();
 }
 
 void splitData(int n) {
@@ -297,7 +438,7 @@ void splitData(int n) {
 		validX[i] = new float[INPUT_DIM];
 		validY[i] = new float[OUTPUT_DIM];
 		for (int j = 0; j < INPUT_DIM; j++) {
-			validX[i][j] = bufferX[k][j] -aveVectorX[j] ;
+			validX[i][j] = bufferX[k][j] -aveVectorX[j];
 		}
 		for (int j = 0; j < OUTPUT_DIM; j++) {
 			validY[i][j] = bufferY[k][j] -aveVectorY[j];
@@ -315,75 +456,74 @@ void loadBuffer() {
 	const int buffer_width = glutGet(GLUT_WINDOW_WIDTH);
 	const int buffer_height = glutGet(GLUT_WINDOW_HEIGHT);
 
-	int n = 0;
-	for (int i = 0; i < buffer_width; i++)
-		for (int j = 0; j < buffer_height; j++)
-		{
-			float isFore[4]{ 0 };
-			glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-			glReadBuffer(GL_COLOR_ATTACHMENT1);
-			glPixelStorei(GL_PACK_ALIGNMENT, 1);
-			glReadPixels(i, j, 1, 1, GL_RGBA, GL_FLOAT, isFore);
+		for (int i = 0; i < buffer_width; i++)
+			for (int j = 0; j < buffer_height; j++)
+			{
+				float isFore[4]{ 0 };
+				glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+				glReadBuffer(GL_COLOR_ATTACHMENT1);
+				glPixelStorei(GL_PACK_ALIGNMENT, 1);
+				glReadPixels(i, j, 1, 1, GL_RGBA, GL_FLOAT, isFore);
 
-			if (isFore[3] == 1.0) {
-				bufferX[n][0] = isFore[0];
-				bufferX[n][1] = isFore[1];
-				bufferX[n][2] = isFore[2];//normal
+				if (isFore[3] == 1.0) {
+					bufferX[num_sample][0] = isFore[0];
+					bufferX[num_sample][1] = isFore[1];
+					bufferX[num_sample][2] = isFore[2];//normal
 
-				float temp[4];
-				glReadBuffer(GL_COLOR_ATTACHMENT2);
-				glPixelStorei(GL_PACK_ALIGNMENT, 2);
-				glReadPixels(i, j, 1, 1, GL_RGBA, GL_FLOAT, temp);
-				bufferX[n][3] = temp[0];
-				bufferX[n][4] = temp[1];
-				bufferX[n][5] = temp[2];//view
-				//bufferX[n][9] = temp[3];//texCoord.x
-				//bufferX[n][0] = temp[3];//texCoord.y;
+					float temp[4];
+					glReadBuffer(GL_COLOR_ATTACHMENT2);
+					glPixelStorei(GL_PACK_ALIGNMENT, 2);
+					glReadPixels(i, j, 1, 1, GL_RGBA, GL_FLOAT, temp);
+					bufferX[num_sample][3] = temp[0];
+					bufferX[num_sample][4] = temp[1];
+					bufferX[num_sample][5] = temp[2];//view
+					//bufferX[num_sample][9] = temp[3];//texCoord.x
+					//bufferX[num_sample][0] = temp[3];//texCoord.y;
 
-				//glReadBuffer(GL_COLOR_ATTACHMENT3);
-				//glPixelStorei(GL_PACK_ALIGNMENT, 3);
-				//glReadPixels(i, j, 1, 1, GL_RGBA, GL_FLOAT, temp);
-				//bufferX[n][6] = temp[0];
-				//bufferX[n][7] = temp[1];
-				//bufferX[n][8] = temp[2];//light
-				//bufferX[n][10] = temp[3];//texCoord.y
-				//bufferX[n][1] = temp[3];//texCoord.y;
+					//glReadBuffer(GL_COLOR_ATTACHMENT3);
+					//glPixelStorei(GL_PACK_ALIGNMENT, 3);
+					//glReadPixels(i, j, 1, 1, GL_RGBA, GL_FLOAT, temp);
+					//bufferX[num_sample][6] = temp[0];
+					//bufferX[num_sample][7] = temp[1];
+					//bufferX[num_sample][8] = temp[2];//light
+					//bufferX[num_sample][10] = temp[3];//texCoord.y
+					//bufferX[num_sample][1] = temp[3];//texCoord.y;
 
-				//bufferX[n][11] = n;
-				bufferX[n][6] = n;
-				//bufferX[n][2] = n;
+					//bufferX[num_sample][11] = n;
+					bufferX[num_sample][6] = num_sample;
+					//bufferX[num_sample][2] = n;
 
+					for (int i = 0; i < INPUT_DIM; i++) {
+						if (bufferX[num_sample][i] > maxVectorX[i]) maxVectorX[i] = bufferX[num_sample][i];
+						if (bufferX[num_sample][i] < minVectorX[i]) minVectorX[i] = bufferX[num_sample][i];
+					}
+
+					glReadBuffer(GL_COLOR_ATTACHMENT0);
+					glPixelStorei(GL_PACK_ALIGNMENT, 0);
+					glReadPixels(i, j, 1, 1, GL_RGBA, GL_FLOAT, temp);
+					bufferY[num_sample][0] = temp[0];
+					bufferY[num_sample][1] = temp[1];
+					bufferY[num_sample][2] = temp[2];
+					bufferY[num_sample][3] = temp[3];
+
+					for (int i = 0; i < OUTPUT_DIM; i++) {
+						if (bufferY[num_sample][i] > maxVectorY[i]) maxVectorY[i] = bufferY[num_sample][i];
+						if (bufferY[num_sample][i] < minVectorY[i]) minVectorY[i] = bufferY[num_sample][i];
+					}
+
+					num_sample++;
+				}
 				for (int i = 0; i < INPUT_DIM; i++) {
-					if (bufferX[n][i] > maxVectorX[i]) maxVectorX[i] = bufferX[n][i];
-					if (bufferX[n][i] < minVectorX[i]) minVectorX[i] = bufferX[n][i];
+					aveVectorX[i] = (maxVectorX[i] + minVectorX[i]) / 2;
+					fcnMat.inputAve[i] = aveVectorX[i];
 				}
-
-				glReadBuffer(GL_COLOR_ATTACHMENT0);
-				glPixelStorei(GL_PACK_ALIGNMENT, 0);
-				glReadPixels(i, j, 1, 1, GL_RGBA, GL_FLOAT, temp);
-				bufferY[n][0] = temp[0];
-				bufferY[n][1] = temp[1];
-				bufferY[n][2] = temp[2];
-				bufferY[n][3] = temp[3];
-
 				for (int i = 0; i < OUTPUT_DIM; i++) {
-					if (bufferY[n][i] > maxVectorY[i]) maxVectorY[i] = bufferY[n][i];
-					if (bufferY[n][i] < minVectorY[i]) minVectorY[i] = bufferY[n][i];
+					aveVectorY[i] = (maxVectorY[i] + minVectorY[i]) / 2;
+					fcnMat.outputAve[i] = aveVectorY[i];
 				}
-
-				n++;
+				glBindFramebuffer(GL_FRAMEBUFFER, 0);
 			}
-			for (int i = 0; i < INPUT_DIM; i++) {
-				aveVectorX[i] = 0;// (maxVectorX[j] + minVectorX[j]) / 2;
-			}
-			for (int i = 0; i < OUTPUT_DIM; i++) {
-				aveVectorY[i] = 0;// (maxVectorY[j] + minVectorY[j]) / 2;
-			}
-			glBindFramebuffer(GL_FRAMEBUFFER, 0);			
-		}
-
-	std::cout << n << std::endl;
-	splitData(n);
+	std::cout << "Number of samples now: "<< num_sample << std::endl;
 }
 
 void idle()
@@ -421,6 +561,15 @@ void reload_shader()
 	for (int i = 0; i < NUM_PASS; i++) {
 		reloadFlag = reloadFlag&&reload_shader_pass(i);
 	}
+
+
+	GLuint new_shader = InitShader("shaders/fw_cs.glsl");
+	if (foward_shader != -1)
+	{
+		glDeleteProgram(foward_shader);
+	}
+	foward_shader = new_shader;
+
    if(!reloadFlag) // loading failed
    {
       glClearColor(1.0f, 0.0f, 1.0f, 0.0f);
@@ -449,10 +598,8 @@ void printGlInfo()
 void initOpenGl()
 {
    //Initialize glew so that new OpenGL function names can be used
-   glewInit();
-
+	glewInit();
    glEnable(GL_DEPTH_TEST);
-
    reload_shader();
 
    //Load a mesh and a texture
@@ -462,10 +609,9 @@ void initOpenGl()
    const int w = glutGet(GLUT_WINDOW_WIDTH);
    const int h = glutGet(GLUT_WINDOW_HEIGHT);
 
-   fcnMat.InitBuffer();
-
    glGenVertexArrays(1, &quad_vao);
 
+//BUFFERS==========================================================================================
    glGenTextures(NUM_BUFFERS, paraBuffers);
    for (int i = 0; i<NUM_BUFFERS; i++)
    {
@@ -499,7 +645,52 @@ void initOpenGl()
    //unbind the fbo
    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-   //fcnMat.ReadFromFile("mats/mats201907181207.txt");
+//NETWORK==========================================================================================
+   fcnMat.InitBuffer();
+   fcnMat.InitData();
+   aves.InitBuffer();
+
+   int depth = fcnMat.Depth();//numHiddenLayer + 1;
+   int weightSize = fcnMat.wSize;//wIn*wHidden + wOut*wHidden + (numHiddenLayer - 1)*wHidden*wHidden;
+   int biasSize = fcnMat.bSize;// wOut + numHiddenLayer*wHidden;
+   int paraSize = weightSize + biasSize;
+
+   float* loc = fcnMat.Mats();//arrangeBuffer(wIn, wOut, wHidden, numHiddenLayer);// new float[paraSize];
+   float* biasLoc = loc + weightSize; //这个计算没问题。sizeof float = 64， weightSize = 0x500
+
+   for (int i = 0; i < numHiddenLayer; i++) {
+	   network.AddFCNlayer(fcnMat.Width(i+1));
+   }
+
+   network.Finish(loc, biasLoc);
+   fcnMat.PassCtrlToShader();
+   fcnMat.PassDataToShader();
+//===================================================================================/////////////////
+   quadMat.InitBuffer(1);
+   quadMat.InitData();
+
+   depth = quadNoHiddenLayer + 1;
+   weightSize = quadIn*quadWHidden + quadOut*quadWHidden + (quadNoHiddenLayer - 1)*quadWHidden*quadWHidden;
+   biasSize = quadOut+ quadNoHiddenLayer*quadWHidden;
+   paraSize = weightSize + biasSize;
+
+   float* quadWloc = quadMat.Mats();
+   float* quadBLoc = quadWloc + weightSize; 
+   for (int i = 0; i < quadNoHiddenLayer; i++) {
+	   quadNetwork.AddFCNlayer(quadWHidden);
+   }
+   quadNetwork.Finish(quadWloc, quadBLoc);
+//=========================================================================
+ //fcnMat.ReadFromFile("mats/debugMED/mats201910141008.txt"/*RGB BRDF, 12*12 */);
+ //fcnMat.ReadFromFile("mats/debugMED/mats201910210536.txt"/*RGB BRDF, 12*16 */);
+ // fcnMat.ReadFromFile("mats/debugMED/mats201910262046.txt"/*RGB BRDF, 12*12, better one */); 
+
+
+ //"mats/debugMED/mats201910091717.txt"/*trained from sphere*/
+ //"mats/debugMED/mats201910120946.txt"/*RGB Phong, 6*10 */
+ //"mats/debugMED/mats201910121423.txt"/*RGB Phong, 12*10 */
+ //"mats/debugMED/mats201910111017.txt"/*RGB Phong, 5*8 */
+
    //for (int i = 0; i < 10; i++) {
 	  // mats[i] = float(i) / 9.f;
    //}
@@ -523,10 +714,28 @@ void keyboard(unsigned char key, int x, int y)
       case 'R':
          reload_shader();
 		 break;
+	  case 'i':
+	  case 'I':
+		  fcnMat.InitData();
+		  quadMat.InitData();
+		  break;
 
 	  case 'b':
 	  case 'B':
+		  testQuad = FALSE;
 		  loadBuffer();
+		  break;
+
+	  case 's':
+	  case 'S':
+		  testQuad = FALSE;
+		  splitData(num_sample);
+		  break;
+
+	  case 'w':
+	  case 'W':
+		  trainFlag = false;
+		  fcnMat.WriteToFile();
 		  break;
    }
 }
@@ -556,44 +765,47 @@ void motion(int x, int y)
    ImGui_ImplGlut_MouseMotionCallback(x, y);
 }
 
+//only for debug
 void mouse(int button, int state, int x, int y)
 {
    ImGui_ImplGlut_MouseButtonCallback(button, state);
 
-   if (button == 0) {
-	   int mouseX = x;
-	   int mouseY = y;
-	   const int buffer_width = glutGet(GLUT_WINDOW_WIDTH);
-	   const int buffer_height = glutGet(GLUT_WINDOW_HEIGHT);
+   //if (button == 0) {
+	  // int mouseX = x;
+	  // int mouseY = y;
+	  // const int buffer_width = glutGet(GLUT_WINDOW_WIDTH);
+	  // const int buffer_height = glutGet(GLUT_WINDOW_HEIGHT);
 
-	   glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-	   glReadBuffer(GL_COLOR_ATTACHMENT0);
-	   glPixelStorei(GL_PACK_ALIGNMENT, 0);
-	   glReadPixels(mouseX, buffer_height - mouseY, 1, 1, GL_RGBA, GL_FLOAT, bufferValue[0]);
+	  // glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+	  // glReadBuffer(GL_COLOR_ATTACHMENT0);
+	  // glPixelStorei(GL_PACK_ALIGNMENT, 0);
+	  // glReadPixels(mouseX, buffer_height - mouseY, 1, 1, GL_RGBA, GL_FLOAT, bufferValue[0]);
 
-	   glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-	   glReadBuffer(GL_COLOR_ATTACHMENT1);
-	   glPixelStorei(GL_PACK_ALIGNMENT, 1);
-	   glReadPixels(mouseX, buffer_height - mouseY, 1, 1, GL_RGBA, GL_FLOAT, bufferValue[1]);
+	  // glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+	  // glReadBuffer(GL_COLOR_ATTACHMENT1);
+	  // glPixelStorei(GL_PACK_ALIGNMENT, 1);
+	  // glReadPixels(mouseX, buffer_height - mouseY, 1, 1, GL_RGBA, GL_FLOAT, bufferValue[1]);
 
-	   glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-	   glReadBuffer(GL_COLOR_ATTACHMENT2);
-	   glPixelStorei(GL_PACK_ALIGNMENT, 2);
-	   glReadPixels(mouseX, buffer_height - mouseY, 1, 1, GL_RGBA, GL_FLOAT, bufferValue[2]);
+	  // glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+	  // glReadBuffer(GL_COLOR_ATTACHMENT2);
+	  // glPixelStorei(GL_PACK_ALIGNMENT, 2);
+	  // glReadPixels(mouseX, buffer_height - mouseY, 1, 1, GL_RGBA, GL_FLOAT, bufferValue[2]);
 
-	   glBindFramebuffer(GL_FRAMEBUFFER, fbo);
-	   glReadBuffer(GL_COLOR_ATTACHMENT3);
-	   glPixelStorei(GL_PACK_ALIGNMENT, 3);
-	   glReadPixels(mouseX, buffer_height - mouseY, 1, 1, GL_RGBA, GL_FLOAT, bufferValue[3]);
+	  // glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+	  // glReadBuffer(GL_COLOR_ATTACHMENT3);
+	  // glPixelStorei(GL_PACK_ALIGNMENT, 3);
+	  // glReadPixels(mouseX, buffer_height - mouseY, 1, 1, GL_RGBA, GL_FLOAT, bufferValue[3]);
 
-	   glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	  // glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-	   std::cout << std::setprecision(4) << "x: " << x << ", y: " << y << std::endl;
-	   std::cout << std::setprecision(4) << "buffer0:\t" << bufferValue[0][0] << "\t" << bufferValue[0][1] << "\t" << bufferValue[0][2] << "\t" << bufferValue[0][3] << std::endl;
-	   std::cout << std::setprecision(4) << "buffer1:\t" << bufferValue[1][0] << "\t" << bufferValue[1][1] << "\t" << bufferValue[1][2] << "\t" << bufferValue[1][3] << std::endl;
-	   std::cout << std::setprecision(4) << "buffer2:\t" << bufferValue[2][0] << "\t" << bufferValue[2][1] << "\t" << bufferValue[2][2] << "\t" << bufferValue[2][3] << std::endl;
-	   std::cout << std::setprecision(4) << "buffer3:\t" << bufferValue[3][0] << "\t" << bufferValue[3][1] << "\t" << bufferValue[3][2] << "\t" << bufferValue[3][3] << std::endl;
-   }
+	  // std::cout << std::setprecision(4) << "x: " << x << ", y: " << y << std::endl;
+	  // std::cout << std::setprecision(4) << "buffer0:\t" << bufferValue[0][0] << "\t" << bufferValue[0][1] << "\t" << bufferValue[0][2] << "\t" << bufferValue[0][3] << std::endl;
+	  // std::cout << std::setprecision(4) << "buffer1:\t" << bufferValue[1][0] << "\t" << bufferValue[1][1] << "\t" << bufferValue[1][2] << "\t" << bufferValue[1][3] << std::endl;
+	  // std::cout << std::setprecision(4) << "buffer2:\t" << bufferValue[2][0] << "\t" << bufferValue[2][1] << "\t" << bufferValue[2][2] << "\t" << bufferValue[2][3] << std::endl;
+	  // std::cout << std::setprecision(4) << "buffer3:\t" << bufferValue[3][0] << "\t" << bufferValue[3][1] << "\t" << bufferValue[3][2] << "\t" << bufferValue[3][3] << std::endl;
+   //}
+
+
    //else {
 	  // int mouseX = x;
 	  // int mouseY = y;
@@ -616,7 +828,7 @@ int main (int argc, char **argv)
    glutInit(&argc, argv); 
    glutInitDisplayMode (GLUT_DOUBLE | GLUT_RGBA | GLUT_DEPTH);
    glutInitWindowPosition (5, 5);
-   glutInitWindowSize (1280, 720);
+   glutInitWindowSize(700,700);// (1280, 720);
    int win = glutCreateWindow ("OpenGL Template");
 
    printGlInfo();
