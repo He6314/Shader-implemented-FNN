@@ -66,7 +66,7 @@ float** validY;
 GLuint shader_program[NUM_PASS] = { -1 };
 GLuint texture_id = -1;
 
-GLuint foward_shader = -1;
+//GLuint foward_shader = -1;
 
 TransUBO transUBO;
 MeshData mesh_data;
@@ -77,7 +77,7 @@ static const std::string fragment_shader[NUM_PASS] = { "shaders/Phong_fs.glsl", 
 
 int wIn = INPUT_DIM;
 int wOut = OUTPUT_DIM;
-int numHiddenLayer = 8; //6;// 12;//5; //
+int numHiddenLayer = 8; //6;// 12;// 12;//5; //
 int wHidden = 8; // 6;//5;//  4; // 12; // 10;//8;//
 float alpha = 0.00003f;// 0.00025f;the first that works
 
@@ -97,8 +97,6 @@ float aveVectorY[OUTPUT_DIM] = { 0 };
 Fcn network(wIn, wOut);
 FcnSSBO fcnMat(wIn, wOut, wHidden, numHiddenLayer);
 AveVectorUBO aves(aveVectorX, INPUT_DIM, aveVectorY, OUTPUT_DIM);
-DataSSBO fcnData(INPUT_DIM, OUTPUT_DIM);
-
 
 Fcn quadNetwork(2, 3);
 FcnSSBO quadMat(2, 3, 8, 8);
@@ -216,8 +214,6 @@ void draw_gui()
 		ImGui::Image((void*)paraBuffers[i], ImVec2(200.f, 200.f), ImVec2(0.0, 1.0), ImVec2(1.0, 0.0));
 		ImGui::NewLine();
 	}
-
-	//ImGui::Image((void*)cs_test, ImVec2(32.f, 32.f), ImVec2(0.0, 1.0), ImVec2(1.0, 0.0));
    ImGui::End();
 
    //static bool show = false;
@@ -233,45 +229,18 @@ void display()
    const int h = glutGet(GLUT_WINDOW_HEIGHT);
    const float aspect_ratio = float(w) / float(h);
 
+   //glUseProgram(foward_shader);
+   //fcnMat.PassCtrlToShader();
+   //fcnMat.PassDataToShader();
+   //glDispatchCompute(8, 1, 1);
+   //glMemoryBarrier(GL_ALL_BARRIER_BITS);
 
    //“ª¡Ó“ª∂Ø-----------------------------------------------------
    if (trainFlag && nbEpoch < 800) {
 	//------------------------------------------------------------
 
 	//-------------------------------------------------------------
-	//CPU   
-	//bool completeEpoch = network.TrainCPU_1batch(nbBatch, nbEpoch, beta1, beta2, alpha);
-	  
-	 //GPU
-	  fcnData.UpdateBatch(nbBatch);
-	  fcnData.PassDataToShader();
-	  bool completeEpoch = //FALSE;
-		 network.TrainShader_1batch(nbBatch, nbEpoch, beta1, beta2, alpha);
-	 
-
-	   glBindBuffer(GL_SHADER_STORAGE_BUFFER, fcnData.idSSBO);
-	   GLfloat *ptr;
-	   ptr = (GLfloat *)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_WRITE); //GL_READ_WRITE?
-	   //std::cerr << ptr[1] << ", y=" << ptr[2] << ", z=" << ptr[3] << endl;
-	   //for (int i = 0; i < 16; i++) {
-		//   std::cerr << ptr[i] << "\t";
-	  // }
-	//   std::cerr << std::endl;
-	//   std::cerr << "-------------------------------------------------" << std::endl;
-	   
-	   std::cerr << "LOSS: " << ptr[2] << std::endl;
-	   glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
-
-	 //  fcnMat.printMat(1); //0: paras; 1:d; 2:m; 3:v;
-	   //glBindBuffer(GL_SHADER_STORAGE_BUFFER, fcnData.idSSBO);
-	   //GLfloat *ptr;
-	   //ptr = (GLfloat *)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_WRITE); //GL_READ_WRITE?
-	   //std::cerr << nbBatch<< ", LOSS: " << ptr[2] << endl;
-	   //glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
-
-	   //cerr << nbBatch << endl;
-	   
-	   
+	   bool completeEpoch = network.TrainCPU_1batch(nbBatch, nbEpoch, beta1, beta2, alpha);
 	   nbBatch++;
 	   if (completeEpoch) {
 		   nbEpoch++;
@@ -283,16 +252,9 @@ void display()
 		   trainFlag = false;
 	   }
    }
-
-   //fcnMat.PassDataToShader();
-   //fcnData.PassDataToShader();
+   fcnMat.PassDataToShader();
    //=============================================================
 
-  // glUseProgram(foward_shader);
-   //glBindImageTexture(7, cs_test, 0, GL_TRUE, 0, GL_WRITE_ONLY, GL_RGBA16F);
-
-  // glDispatchCompute(32, 32, 1);
-  // glMemoryBarrier(GL_ALL_BARRIER_BITS);
    if (!testQuad)
    {
 	   transUBO.mats.M =
@@ -305,21 +267,11 @@ void display()
 	   transUBO.mats.P = glm::perspective(3.141592f / 4.0f, aspect_ratio, 0.1f, 100.0f);
 	   glm::mat4 PVM = transUBO.mats.P*transUBO.mats.V*transUBO.mats.M;
 
-	 /*/////////////////////////////////////
-	  PASS CS
-   ``/////////////////////////////////////*/
-
 	   /*/////////////////////////////////////
-		  PASS1: traditional lighting models
+		  PASS1
 	   /////////////////////////////////////*/
 	   glUseProgram(shader_program[0]);
 
-	   //DRAW ON SCREEN:
-	   //glBindFramebuffer(GL_FRAMEBUFFER, 0);
-	   //glDrawBuffer(GL_BACK);
-
-	   //DRAW IN BUFFERS:
-	   //glClearColor(0.35f, 0.35f, 0.35f, 0.0f);
 	   glBindFramebuffer(GL_FRAMEBUFFER, fbo); // Render to FBO, all gbuffer textures
 	   const GLenum drawBuffers[NUM_BUFFERS] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2, GL_COLOR_ATTACHMENT3 };
 	   glDrawBuffers(NUM_BUFFERS, drawBuffers);
@@ -338,7 +290,7 @@ void display()
 	   //glDrawElements(GL_TRIANGLES, mesh_data.mNumIndices, GL_UNSIGNED_INT, 0);
 
 	/*/////////////////////////////////////
-	   PASS2: FCNN
+	   PASS2
 	/////////////////////////////////////*/
 //=========================================================
 	   //GLuint64 startTime, stopTime;
@@ -441,7 +393,6 @@ float* arrangeBuffer(int wIn, int wOut, int wHidden, int numHiddenLayer) {
 void CPUtest(int trainSize, int validSize) {
 	network.SetTrainData(trainX, trainY, trainSize, batchSize);
 	network.SetValidData(validX, validY, validSize);
-
 	trainFlag = true;
 
 	//network.TrainCPU();
@@ -560,11 +511,8 @@ void loadBuffer() {
 						if (bufferY[num_sample][i] < minVectorY[i]) minVectorY[i] = bufferY[num_sample][i];
 					}
 
-					fcnData.EnterData(bufferX[num_sample], bufferY[num_sample], i, j);
-					
 					num_sample++;
 				}
-				
 				for (int i = 0; i < INPUT_DIM; i++) {
 					aveVectorX[i] = (maxVectorX[i] + minVectorX[i]) / 2;
 					fcnMat.inputAve[i] = aveVectorX[i];
@@ -575,10 +523,6 @@ void loadBuffer() {
 				}
 				glBindFramebuffer(GL_FRAMEBUFFER, 0);
 			}
-
-		fcnData.BatchSize(batchSize);
-		fcnData.SplitData();
-
 	std::cout << "Number of samples now: "<< num_sample << std::endl;
 }
 
@@ -619,7 +563,7 @@ void reload_shader()
 	}
 
 
-	//GLuint new_shader = InitShader("shaders/propogation_cs.glsl");
+	////GLuint new_shader = InitShader("shaders/fw_cs.glsl");
 	//if (foward_shader != -1)
 	//{
 	//	glDeleteProgram(foward_shader);
@@ -659,7 +603,7 @@ void initOpenGl()
    reload_shader();
 
    //Load a mesh and a texture
-   mesh_data = LoadMesh(mesh_name); //Helper function: Uses Open Asset Import library
+   mesh_data = LoadMesh(mesh_name); //Helper function: Uses Open Asset Import library.
    texture_id = LoadTexture(texture_name.c_str()); //Helper function: Uses FreeImage library
 
    transUBO.InitBuffer();
@@ -669,7 +613,7 @@ void initOpenGl()
 
    glGenVertexArrays(1, &quad_vao);
 
-//BUFFERS(Textures)==========================================================================================
+//BUFFERS==========================================================================================
    glGenTextures(NUM_BUFFERS, paraBuffers);
    for (int i = 0; i<NUM_BUFFERS; i++)
    {
@@ -698,7 +642,7 @@ void initOpenGl()
    for (int i = 0; i<NUM_BUFFERS; i++)
    {
 	   glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0 + i, GL_TEXTURE_2D, paraBuffers[i], 0);
-   } 
+   }
    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depth_rbo, 0);
    //unbind the fbo
    glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -720,10 +664,8 @@ void initOpenGl()
 	   network.AddFCNlayer(fcnMat.Width(i+1));
    }
 
-
-   //network.Finish(fcnMat);
    //network.Finish(loc, biasLoc);
-   network.Finish(loc, weightSize, paraSize);
+   network.Finish(loc, weightSize,paraSize);
    fcnMat.PassCtrlToShader();
    fcnMat.PassDataToShader();
 //===================================================================================/////////////////
@@ -742,6 +684,26 @@ void initOpenGl()
    }
    //quadNetwork.Finish(quadWloc, quadBLoc);
    quadNetwork.Finish(quadWloc, weightSize, paraSize);
+ //=========================================================================
+ //fcnMat.ReadFromFile("mats/debugMED/mats201910141008.txt"/*RGB BRDF, 12*12 */);
+ //fcnMat.ReadFromFile("mats/debugMED/mats201910210536.txt"/*RGB BRDF, 12*16 */);
+ //fcnMat.ReadFromFile("mats/debugMED/mats201910262046.txt"/*RGB BRDF, 12*12, better one */); 
+
+
+ //"mats/debugMED/mats201910091717.txt"/*trained from sphere*/
+ //"mats/debugMED/mats201910120946.txt"/*RGB Phong, 6*10 */
+ //"mats/debugMED/mats201910121423.txt"/*RGB Phong, 12*10 */
+ //"mats/debugMED/mats201910111017.txt"/*RGB Phong, 5*8 */
+
+   //for (int i = 0; i < 10; i++) {
+	  // mats[i] = float(i) / 9.f;
+   //}
+   //GLuint matLoc = 3;
+   //glGenBuffers(1, &matSSBO);
+   //glBindBuffer(GL_SHADER_STORAGE_BUFFER, matSSBO);
+   //glBufferData(GL_SHADER_STORAGE_BUFFER, 10*sizeof(float), &mats[0], GL_DYNAMIC_COPY);
+   //glBindBufferBase(GL_SHADER_STORAGE_BUFFER, matLoc, matSSBO);
+   //glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
 
 // glut callbacks need to send keyboard and mouse events to imgui
@@ -759,7 +721,6 @@ void keyboard(unsigned char key, int x, int y)
 	  case 'i':
 	  case 'I':
 		  fcnMat.InitData();
-		  fcnMat.PassDataToShader();
 		  quadMat.InitData();
 		  break;
 
@@ -780,13 +741,6 @@ void keyboard(unsigned char key, int x, int y)
 		  trainFlag = false;
 		  fcnMat.WriteToFile();
 		  break;
-
-	  case '0': fcnData.UpdateBatch(0); break;
-	  case '1': fcnData.UpdateBatch(1);break;
-	  case '2': fcnData.UpdateBatch(2);break;
-	  case '3': fcnData.UpdateBatch(3);break;
-	  case '4': fcnData.UpdateBatch(4);break;
-	  case '5': fcnData.UpdateBatch(5);break;
    }
 }
 

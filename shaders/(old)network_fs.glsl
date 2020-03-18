@@ -18,7 +18,6 @@ layout(std430, binding = 2) buffer ControlParas
 {
 	int depth;
 	int weightSize;
-	int paraSize;
 };
 
 layout(std430, binding = 3) buffer ControlWidth
@@ -39,17 +38,6 @@ layout(std430, binding = 5) buffer AveX
 layout(std430, binding = 6) buffer AveY
 {
 	float aveOut[];
-};
-
-layout(std430, binding = 7) buffer train{
-	float trainData[];
-};
-layout(std430, binding = 8) buffer validation{
-	float validData[];
-};
-
-layout(std430, binding = 9) buffer id_buffer{
-	float ids[];
 };
 
 //===============================================================
@@ -102,65 +90,48 @@ void main(void)
 	
 	if(texture(buffer1, tex_coord).w!=0.0){
 		vec3 yuv = Eval(normal, view, light, tex).rgb;// * textureColor; //texture(buffer0, tex_coord);//
-		fragcolor = vec4(yuv,1.0);//texture(buffer0, tex_coord);//vec4(1.0);//YUV2RGB()//
+		fragcolor = vec4(yuv,1.0);//YUV2RGB()
 	}
-
+	
 	else
 	{
-
-	//int idx = int(tex_coord.x*64.0);
-	fragcolor = //vec4(0.0);
-		//vec4(abs(mat[paraSize+2])*50.0);
-		//vec4(abs(mat[2])*5.0);
-		//vec4(abs(ids[idx]));
-		//vec4(abs(ids[1]));
-		//vec4(abs(ids[1]));
-		//vec4(mat[paraSize]/5.0);
-		vec4(mat[0]);
-
-//		if(debugFlag!=1){
-//		 fragcolor = vec4(validData[150]+0.80);}//vec4(abs(aveIn[0])*10);}
-//		else{
-//			int wLoc = 0;
-//			for(int n=1;n<depthIndex+1;n++){ 
-//				wLoc += width[n-1]*width[n];}
-//			wLoc += widthIndex1 * width[depthIndex] + widthIndex2;
-//			float weight = mat[0];//[wLoc];		
-//			fragcolor = vec4(abs(weight));
-//		}
+		if(debugFlag!=1){
+		 fragcolor = vec4(abs(aveIn[0])*10);}
+		else{
+			int wLoc = 0;
+			for(int n=1;n<depthIndex+1;n++){ 
+				wLoc += width[n-1]*width[n];}
+			wLoc += widthIndex1 * width[depthIndex] + widthIndex2;
+			float weight = mat[0];//[wLoc];		
+			fragcolor = vec4(abs(weight));
+		}
 	}
-
-	//fragcolor.g -= 1.0;
 }
 
 float activateFunc(float x) {
 	//return (x > 0) ? x : 0;//relu
-	//return (x > 0) ? x : (0.05*x);//leaky relu
-	return tanh(x);//tanh 2.0 / (1.0 + exp(-2.0*x)) - 1.0;
+	//return (x > 0) ? x : (0.2*x);//leaky relu
+	return tanh(x);//tanh // 2.0 / (1.0 + exp(-2.0*x)) - 1.0; //another implementation
+	//return 1.0 / (1.0 + exp(-x)); //sigmoid
 };
 
 vec4 Eval(vec3 normal, vec3 view, vec3 light, vec2 tex_coord){
 	vec4 color = vec4(1.0);
 
 	float nodes[MAX_WIDTH][MAX_DEPTH];
-
-//	for(int i=0;i<width[0];i++){
-//		int n = int(tex_coord.x/64.0);
-//		nodes[0][i] = trainData[n*32 + i];
-//	}
 	nodes[0][0] = normal.x - aveIn[0];
 	nodes[0][1] = normal.y - aveIn[1];
 	nodes[0][2] = normal.z - aveIn[2];
 	nodes[0][3] = view.x - aveIn[3];
 	nodes[0][4] = view.y - aveIn[4];
 	nodes[0][5] = view.z - aveIn[5];
-//	nodes[0][7] = light.y;
-//	nodes[0][8] = light.z;
-//	nodes[0][6] = light.x;
-//	nodes[0][9] = tex_coord.x;
-//	nodes[0][10] = tex_coord.y;
-//	nodes[0][0] = tex_coord.x;
-//	nodes[0][1] = tex_coord.y;
+	//nodes[0][7] = light.y;
+	//nodes[0][8] = light.z;
+	//nodes[0][6] = light.x;
+	//nodes[0][9] = tex_coord.x;
+	//nodes[0][10] = tex_coord.y;
+	//nodes[0][0] = tex_coord.x;
+	//nodes[0][1] = tex_coord.y;
 
 	int wShift = 0;
 	int bShift = 0;
@@ -178,7 +149,7 @@ vec4 Eval(vec3 normal, vec3 view, vec3 light, vec2 tex_coord){
 			int bLoc = weightSize + bShift + i;
 			float bias = mat[bLoc];
 			nodes[n][i] += bias;
-			//if(n<depth)
+			if(n<depth)
 			nodes[n][i] = activateFunc(nodes[n][i]);
 		}
 		wShift += width[n-1]*width[n];
@@ -189,13 +160,9 @@ vec4 Eval(vec3 normal, vec3 view, vec3 light, vec2 tex_coord){
 	//color.y = nodes[outL][1];// + aveOut[1];//10.*abs(mat[299]);//
 	//color.z = nodes[outL][2];// + aveOut[2];//10.*abs(mat[299]);//
 	
-	color.x = nodes[outL][0];// + aveOut[0];//10.*abs(mat[299]);//
-	color.y = nodes[outL][1];// + aveOut[1];//10.*abs(mat[299]);//
-	color.z = nodes[outL][2];// + aveOut[2];//10.*abs(mat[299]);//
-
-	//color.x = nodes[0][3] + aveIn[3];
-	//color.y = nodes[0][4] + aveIn[4];
-	//color.z = nodes[0][5] + aveIn[5];
+	color.x = nodes[outL][0] + aveOut[0];//10.*abs(mat[299]);//
+	color.y = nodes[outL][1] + aveOut[1];//10.*abs(mat[299]);//
+	color.z = nodes[outL][2] + aveOut[2];//10.*abs(mat[299]);//
 
 	//color = vec4(vec3(nodes[outL][0]),1.0);//vec4(mat[15]+1.0f);
 	return color;

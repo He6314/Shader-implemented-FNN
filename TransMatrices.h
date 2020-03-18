@@ -26,6 +26,7 @@ struct TransUBO
 	unsigned int ubo;
 	GLuint binding_loc;
 
+	void InitBuffer();
 	void PassDataToShader();
 	TransUBO();
 };

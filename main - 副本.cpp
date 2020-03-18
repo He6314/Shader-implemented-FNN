@@ -52,6 +52,8 @@ GLuint paraBuffers[NUM_BUFFERS] = { -1 };
 GLuint fbo = -1;
 GLuint depth_rbo;
 
+//GLuint cs_test = -1;
+
 int num_sample = 0;
 
 GLfloat bufferValue[NUM_BUFFERS][4];
@@ -67,6 +69,7 @@ GLuint shader_program[NUM_PASS] = { -1 };
 GLuint texture_id = -1;
 
 GLuint foward_shader = -1;
+
 
 TransUBO transUBO;
 MeshData mesh_data;
@@ -97,7 +100,7 @@ float aveVectorY[OUTPUT_DIM] = { 0 };
 Fcn network(wIn, wOut);
 FcnSSBO fcnMat(wIn, wOut, wHidden, numHiddenLayer);
 AveVectorUBO aves(aveVectorX, INPUT_DIM, aveVectorY, OUTPUT_DIM);
-DataSSBO fcnData(INPUT_DIM, OUTPUT_DIM);
+//DataSSBO fcnData(INPUT_DIM, OUTPUT_DIM);
 
 
 Fcn quadNetwork(2, 3);
@@ -240,29 +243,20 @@ void display()
 
 	//-------------------------------------------------------------
 	//CPU   
-	//bool completeEpoch = network.TrainCPU_1batch(nbBatch, nbEpoch, beta1, beta2, alpha);
+	bool completeEpoch = network.TrainCPU_1batch(nbBatch, nbEpoch, beta1, beta2, alpha);
 	  
 	 //GPU
-	  fcnData.UpdateBatch(nbBatch);
-	  fcnData.PassDataToShader();
-	  bool completeEpoch = //FALSE;
-		 network.TrainShader_1batch(nbBatch, nbEpoch, beta1, beta2, alpha);
+	  //fcnData.UpdateBatch(nbBatch);
+	  //fcnData.PassDataToShader();
+	  //bool completeEpoch = network.TrainShader_1batch(nbBatch, nbEpoch, beta1, beta2, alpha);
 	 
+	  //fcnMat.printMat(2);
 
-	   glBindBuffer(GL_SHADER_STORAGE_BUFFER, fcnData.idSSBO);
-	   GLfloat *ptr;
-	   ptr = (GLfloat *)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_WRITE); //GL_READ_WRITE?
+	   //glBindBuffer(GL_SHADER_STORAGE_BUFFER, fcnData.idSSBO);
+	   //GLfloat *ptr;
+	   //ptr = (GLfloat *)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_WRITE); //GL_READ_WRITE?
 	   //std::cerr << ptr[1] << ", y=" << ptr[2] << ", z=" << ptr[3] << endl;
-	   //for (int i = 0; i < 16; i++) {
-		//   std::cerr << ptr[i] << "\t";
-	  // }
-	//   std::cerr << std::endl;
-	//   std::cerr << "-------------------------------------------------" << std::endl;
-	   
-	   std::cerr << "LOSS: " << ptr[2] << std::endl;
-	   glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
-
-	 //  fcnMat.printMat(1); //0: paras; 1:d; 2:m; 3:v;
+	   //glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
 	   //glBindBuffer(GL_SHADER_STORAGE_BUFFER, fcnData.idSSBO);
 	   //GLfloat *ptr;
 	   //ptr = (GLfloat *)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_WRITE); //GL_READ_WRITE?
@@ -284,7 +278,7 @@ void display()
 	   }
    }
 
-   //fcnMat.PassDataToShader();
+   fcnMat.PassDataToShader();
    //fcnData.PassDataToShader();
    //=============================================================
 
@@ -319,7 +313,7 @@ void display()
 	   //glDrawBuffer(GL_BACK);
 
 	   //DRAW IN BUFFERS:
-	   //glClearColor(0.35f, 0.35f, 0.35f, 0.0f);
+	   glClearColor(0.35f, 0.35f, 0.35f, 0.0f);
 	   glBindFramebuffer(GL_FRAMEBUFFER, fbo); // Render to FBO, all gbuffer textures
 	   const GLenum drawBuffers[NUM_BUFFERS] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2, GL_COLOR_ATTACHMENT3 };
 	   glDrawBuffers(NUM_BUFFERS, drawBuffers);
@@ -560,7 +554,7 @@ void loadBuffer() {
 						if (bufferY[num_sample][i] < minVectorY[i]) minVectorY[i] = bufferY[num_sample][i];
 					}
 
-					fcnData.EnterData(bufferX[num_sample], bufferY[num_sample], i, j);
+					//fcnData.EnterData(bufferX[num_sample], bufferY[num_sample], i, j);
 					
 					num_sample++;
 				}
@@ -576,8 +570,8 @@ void loadBuffer() {
 				glBindFramebuffer(GL_FRAMEBUFFER, 0);
 			}
 
-		fcnData.BatchSize(batchSize);
-		fcnData.SplitData();
+		//fcnData.BatchSize(batchSize);
+		//fcnData.SplitData();
 
 	std::cout << "Number of samples now: "<< num_sample << std::endl;
 }
@@ -692,6 +686,15 @@ void initOpenGl()
    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_NONE);
    glBindTexture(GL_TEXTURE_2D, 0);
 
+   //glGenTextures(1, &cs_test);
+   //glBindTexture(GL_TEXTURE_2D, cs_test);
+   //glTexStorage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, 32, 32);
+   //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+   //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+   //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+   //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+   //glBindTexture(GL_TEXTURE_2D, 0);
+
    glGenFramebuffers(1, &fbo);
    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
    //attach the texture we just created to color attachment 1
@@ -721,13 +724,14 @@ void initOpenGl()
    }
 
 
+   network.Finish(loc, weightSize, paraSize);
    //network.Finish(fcnMat);
    //network.Finish(loc, biasLoc);
-   network.Finish(loc, weightSize, paraSize);
    fcnMat.PassCtrlToShader();
    fcnMat.PassDataToShader();
+   //fcnData.PassDataToShader();
 //===================================================================================/////////////////
-   quadMat.InitBuffer(1);
+   quadMat.InitBuffer();
    quadMat.InitData();
 
    depth = quadNoHiddenLayer + 1;
@@ -741,7 +745,27 @@ void initOpenGl()
 	   quadNetwork.AddFCNlayer(quadWHidden);
    }
    //quadNetwork.Finish(quadWloc, quadBLoc);
-   quadNetwork.Finish(quadWloc, weightSize, paraSize);
+   //quadNetwork.Finish(quadMat);
+//=========================================================================
+ //fcnMat.ReadFromFile("mats/debugMED/mats201910141008.txt"/*RGB BRDF, 12*12 */);
+ //fcnMat.ReadFromFile("mats/debugMED/mats201910210536.txt"/*RGB BRDF, 12*16 */);
+ // fcnMat.ReadFromFile("mats/debugMED/mats201910262046.txt"/*RGB BRDF, 12*12, better one */); 
+
+
+ //"mats/debugMED/mats201910091717.txt"/*trained from sphere*/
+ //"mats/debugMED/mats201910120946.txt"/*RGB Phong, 6*10 */
+ //"mats/debugMED/mats201910121423.txt"/*RGB Phong, 12*10 */
+ //"mats/debugMED/mats201910111017.txt"/*RGB Phong, 5*8 */
+
+   //for (int i = 0; i < 10; i++) {
+	  // mats[i] = float(i) / 9.f;
+   //}
+   //GLuint matLoc = 3;
+   //glGenBuffers(1, &matSSBO);
+   //glBindBuffer(GL_SHADER_STORAGE_BUFFER, matSSBO);
+   //glBufferData(GL_SHADER_STORAGE_BUFFER, 10*sizeof(float), &mats[0], GL_DYNAMIC_COPY);
+   //glBindBufferBase(GL_SHADER_STORAGE_BUFFER, matLoc, matSSBO);
+   //glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
 
 // glut callbacks need to send keyboard and mouse events to imgui
@@ -759,7 +783,6 @@ void keyboard(unsigned char key, int x, int y)
 	  case 'i':
 	  case 'I':
 		  fcnMat.InitData();
-		  fcnMat.PassDataToShader();
 		  quadMat.InitData();
 		  break;
 
@@ -781,12 +804,12 @@ void keyboard(unsigned char key, int x, int y)
 		  fcnMat.WriteToFile();
 		  break;
 
-	  case '0': fcnData.UpdateBatch(0); break;
-	  case '1': fcnData.UpdateBatch(1);break;
-	  case '2': fcnData.UpdateBatch(2);break;
-	  case '3': fcnData.UpdateBatch(3);break;
-	  case '4': fcnData.UpdateBatch(4);break;
-	  case '5': fcnData.UpdateBatch(5);break;
+	 // case '0': fcnData.UpdateBatch(0); break;
+	 // case '1': fcnData.UpdateBatch(1);break;
+	 // case '2': fcnData.UpdateBatch(2);break;
+	 // case '3': fcnData.UpdateBatch(3);break;
+	 // case '4': fcnData.UpdateBatch(4);break;
+	 // case '5': fcnData.UpdateBatch(5);break;
    }
 }
 

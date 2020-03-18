@@ -7,9 +7,6 @@
 #include <math.h>
 #include <vector>
 
-#include"InitShader.h"
-#include "NetworkMatrices.hpp"
-
 using namespace std;
 
 struct DataNode {
@@ -39,7 +36,7 @@ struct DataNode {
 };
 
 struct FcnLayer {
-	int activateType = 2;
+	int activateType = 2;// 3; //1;//0;//  
 	//Don't allocate memory here, do it in the network for continuous and stable memory allocation.
 	float** weight;
 	float* bias;
@@ -90,9 +87,6 @@ struct FcnLayer {
 
 class Fcn {
 private:
-	int debug_noCPU = 0;
-	int debug_noGPU = 0;
-
 	vector<DataNode> nodes;
 	vector<FcnLayer> layers;
 
@@ -110,20 +104,21 @@ private:
 	int batchSize;
 	int validSize;
 
+	float* dMatLoc;
+	float* mMatLoc;
+	float* vMatLoc;
+	float* dbVecLoc;
+	float* mbVecLoc;
+	float* vbVecLoc;
+
 	int matSize;
 	int noMin;
 	float* matPt;
 	float* matMin;
 
-	GLuint propo_shader = -1;
-	GLuint Adam_shader = -1;
-	GLuint debug_shader = -1;
-
 	bool finishFlag = FALSE;
 
 public:
-	string propoCS = "shaders/propogation_cs.glsl";
-	string AdamCS = "shaders/Adam_cs.glsl";
 	vector<float> trainErrors;
 	vector<float> validErrors;
 	int maxEpochs = 200;
@@ -135,17 +130,12 @@ public:
 
 	float* Evaluate(float* x); //not used
 
-	bool TrainShader_1batch(int num_batch, int num_epoch, float beta1, float beta2, float alpha);
+	void ForwardCS();
 
 	void SetTrainData(float** x, float** y, int size, int bSize);
 	void SetValidData(float** x, float** y, int size);
 	void AddFCNlayer(int width);
-
-	void reload_FCN_shader();
-
-	//void Finish(float* wLoc, float* bLoc);
-	//void Finish(FcnSSBO paras);
-	void Finish(float* matLoc, int wSize, int size);
+	void Finish(float* weightLoc, float* biasLoc);
 
 	int Depth() { return depth; }
 	int NumDataNodes() { return depth + 1; }
@@ -168,15 +158,17 @@ public:
 float activateFunc(float x, int type = 2) {
 	switch(type){
 	case 0: return (x > 0) ? x : 0; break;//relu
-	case 1: return (x > 0) ? x : (0.05*x); break;//leaky relu
+	case 1: return (x > 0) ? x : (0.2*x); break;//leaky relu
 	case 2: return tanh(x); break;//tanh 2.0 / (1.0 + exp(-2.0*x)) - 1.0;
+	case 3: return 1.0 / (1.0 + exp(-x)); break; //sigmoid
 	}
 };
 float dActivateFunc(float x, int type = 2) {
 	switch (type) {
-		case 0: return float(x>0);//drelu
-		case 1: return (x > 0) ? 1.0 : 0.05;//d leaku relu
-		case 2: return 1 - tanh(x)*tanh(x);
+		case 0: return float(x>0);//d relu
+		case 1: return (x > 0) ? 1.0 : 0.1;//d leaku relu
+		case 2: return 1 - tanh(x)*tanh(x);// d tanh
+		case 3: return (1.0 / (1.0 + exp(-x)))*(1 - (1.0 / (1.0 + exp(-x)))); break; //d sigmoid
 	}
 };
 
@@ -336,12 +328,7 @@ void FcnLayer::AdamFixed(int t, float lr) {
 	}
 }
 
-void FcnLayer::Adam(int t, float beta1 = 0.9f, float beta2 = 0.999f, float alpha = 0.002f)
-//需要输入：{dbVec, dMat}:就是dMat和dMat*weight
-//输出：deltaB, deltaW：输出到update
-//自己更新：{mbVec, vbVec}，{mMat, vMat} ：什么时候清零？ 一次训练内都不清0，也需要地方存
-//超参数：mBeta1, mBeta2, mAlpha, mEps, bias_factor
-{
+void FcnLayer::Adam(int t, float beta1 = 0.9f, float beta2 = 0.999f, float alpha = 0.002f) {
 	const float bias_factor = 2.0f;
 	float mEps = 1e-8;
 
@@ -394,17 +381,29 @@ void FcnLayer::Malloc(float* weightLoc, float* biasLoc,
 	bias = biasLoc;
 
 	weight = new float*[wBottom];
+	for (int i = 0; i < wBottom; i++) {
+		weight[i] = weightLoc + i * wTop;
+	}
+
 	dMat = new float*[wBottom]();
 	mMat = new float*[wBottom]();
 	vMat = new float*[wBottom]();
+	//dMat[0] = new float[(wTop+1)*(wBottom+1)]();
+	//mMat[0] = new float[(wTop+1)*(wBottom+1)]();
+	//vMat[0] = new float[(wTop+1)*(wBottom+1)]();
 	for (int i = 0; i < wBottom; i++) {
-		weight[i] = weightLoc + i * wTop;
-		dMat[i] = dMatLoc + i * wTop;
-		mMat[i] = mMatLoc + i * wTop;
-		vMat[i] = vMatLoc + i * wTop;
+		//dMat[i] = dMat[0]+i*wTop+1;
+		//mMat[i] = mMat[0]+i*wTop+1;
+		//vMat[i] = vMat[0]+i*wTop+1;
+		dMat[i] = dMatLoc + i*wTop;
+		mMat[i] = mMatLoc + i*wTop;
+		vMat[i] = vMatLoc + i*wTop;
 		int a = 1;
 	}
 
+	//dbVec = new float[wBottom]();
+	//mbVec = new float[wBottom]();
+	//vbVec = new float[wBottom]();
 	dbVec = dbVecLoc;
 	mbVec = mbVecLoc;
 	vbVec = vbVecLoc;
@@ -477,35 +476,8 @@ float* Fcn::Evaluate(float* x) {
 	return nodes[depth].aVec;
 }
 
-bool Fcn::TrainShader_1batch(int num_batch, int num_epoch, float beta1GUI = 0.9f, float beta2GUI = 0.999f, float alphaGUI = 0.0001f) {
-	if (num_batch == 0) { // need modification. Loop is not necessary
-		for (int i = 0; i < depth; i++) {
-			layers[i].ClearD();
-		}
-	}
-	debug_noGPU++;
-	if (num_batch*batchSize < dataSize) {
-		glUseProgram(propo_shader);
-		const int time_ms = glutGet(GLUT_ELAPSED_TIME);
-		float t_sec = 0.001f*time_ms;
-		glProgramUniform1f(propo_shader, 4, t_sec);//debug
-		glDispatchCompute(batchSize, 1, 1);
-		glMemoryBarrier(GL_ALL_BARRIER_BITS);
+void Fcn::ForwardCS() {
 
-		glUseProgram(Adam_shader);
-		glDispatchCompute(1, 1, 1);
-		glMemoryBarrier(GL_ALL_BARRIER_BITS);
-
-		//glUseProgram(debug_shader);
-		//glDispatchCompute(1, 1, 1);
-		//glMemoryBarrier(GL_ALL_BARRIER_BITS);
-
-		return FALSE;
-	}
-	
-	else return TRUE;
-	//cerr << "CPU: " << debug_noCPU << ", GPU: " << debug_noGPU << endl;
-	//cerr << debug_noGPU << ", x=";
 }
 
 void Fcn::TrainCPU() {
@@ -546,30 +518,19 @@ void Fcn::TrainCPU() {
 						lossVec[j] += (nodes[depth].aVec[j] - nodes[depth].groundTruth[j])* dActivateFunc(nodes[depth].zVec[j], layers[depth-1].activateType);
 					}
 
-					for (int j = 0; j < wOut; j++) {
-						nodes[depth].dVec[j] = lossVec[j];
-					}
-					//nodes[depth].printDiff();
-					for (int j = depth - 1; j >= 0; j--) {
-						layers[j].Backward();
-					}
-//mini batch BP
-					for (int j = 0; j < depth; j++) {
-						layers[j].AccuGrad();
-					}
 					noSample++;
 				}
 //mini batch BP
-				//for (int j = 0; j < wOut; j++) {
-				//		nodes[depth].dVec[j] = lossVec[j] / noSample;
-				//}
-				////nodes[depth].printDiff();
-				//for (int j = depth - 1; j >= 0; j--) {
-				//	layers[j].Backward();
-				//	//nodes[j].printDiff();
-				//}
+				for (int j = 0; j < wOut; j++) {
+						nodes[depth].dVec[j] = lossVec[j] / noSample;
+				}
+				//nodes[depth].printDiff();
+				for (int j = depth - 1; j >= 0; j--) {
+					layers[j].Backward();
+					//nodes[j].printDiff();
+				}
 				for (int j = 0; j < depth; j++) {
-					//layers[j].AccuGrad();
+					layers[j].AccuGrad();
 					//layers[j].printDMat();
 					layers[j].AdamFixed(2*k + 1, 0.00005f);
 				}
@@ -805,29 +766,28 @@ void Fcn::TrainCPU_1epoch(int n, float beta1GUI = 0.9f, float beta2GUI = 0.999f,
 
 bool Fcn::TrainCPU_1batch(int num_batch, int num_epoch, float beta1GUI = 0.9f, float beta2GUI = 0.999f, float alphaGUI = 0.0001f) {
 	if (finishFlag) {
-		float beta1 = beta1GUI;//缺
-		float beta2 = beta2GUI;//缺
-		float alpha = alphaGUI;//缺
+		float beta1 = beta1GUI;
+		float beta2 = beta2GUI;
+		float alpha = alphaGUI;
 
-		bool firstBatch = (num_batch == 0);//缺
-		bool lastBatch = FALSE;//缺
+		bool firstBatch = (num_batch == 0);
+		bool lastBatch = FALSE;
 
 		if (firstBatch) {
 			for (int i = 0; i < depth; i++) {
 				layers[i].ClearD();
 			}
-		} 
-
+		}
 		//train
 		{
-			int inputShift = (num_batch * batchSize) % dataSize; //可能缺
+			int inputShift = (num_batch * batchSize) % dataSize;
 
 			//data preparation
 			float* lossVec = new float[wOut]();
 			int noSample = 0;
 			float error = 0;
 			for (int i = 0; i < batchSize; i++) {
-				if ((i + inputShift) >= dataSize) { //缺
+				if ((i + inputShift) >= dataSize) {
 					lastBatch = TRUE;  break;
 				}
 				for (int j = 0; j < wIn; j++) {
@@ -849,26 +809,28 @@ bool Fcn::TrainCPU_1batch(int num_batch, int num_epoch, float beta1GUI = 0.9f, f
 					//nodes[j + 1].printValue();
 				}
 				for (int j = 0; j < wOut; j++) {
-					lossVec[j] = (nodes[depth].aVec[j] - nodes[depth].groundTruth[j])* dActivateFunc(nodes[depth].zVec[j], layers[depth-1].activateType);
-				}
-				for (int j = 0; j < wOut; j++) {
-					nodes[depth].dVec[j] = lossVec[j];
-				}
-				//nodes[depth].printDiff();
-				for (int j = depth - 1; j >= 0; j--) {
-					layers[j].Backward();
-				}
-				for (int j = 0; j < depth; j++) {
-					layers[j].AccuGrad();
+					lossVec[j] += (nodes[depth].aVec[j] - nodes[depth].groundTruth[j])* dActivateFunc(nodes[depth].zVec[j], layers[depth-1].activateType);
 				}
 				noSample++;
 			}
 			//if (firstBatch)		cout << endl;
+
+			//mini batch BP
+			for (int j = 0; j < wOut; j++) {
+				nodes[depth].dVec[j] = lossVec[j] / noSample;
+			}
+			//nodes[depth].printDiff();
+			for (int j = depth - 1; j >= 0; j--) {
+				layers[j].Backward();
+				//nodes[j].printDiff();
+			}
 			for (int j = 0; j < depth; j++) {
+				layers[j].AccuGrad();
+				//layers[j].printDMat();
 				layers[j].Adam(num_batch + 1, beta1, beta2, alpha);//？？？
 			}
 
-			//Calculate Loss //不需要
+			//Calculate Loss
 			for (int i = 0; i < batchSize; i++) {
 				for (int j = 0; j < depth; j++) {
 					layers[j].Forward();
@@ -883,7 +845,7 @@ bool Fcn::TrainCPU_1batch(int num_batch, int num_epoch, float beta1GUI = 0.9f, f
 			trainErrors.push_back(error);
 
 			cout << "\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b";
-			cout << "\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b";
+			//cout << "\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b";
 			cout << "LOSS:\t" << fixed << setprecision(6) << error;// << ", " << nodes[depth].aVec[0] - nodes[depth].groundTruth[0] << ", " << nodes[depth].aVec[1] - nodes[depth].groundTruth[1] << ", " << nodes[depth].aVec[2] - nodes[depth].groundTruth[2];
 
 			delete[] lossVec;
@@ -893,7 +855,7 @@ bool Fcn::TrainCPU_1batch(int num_batch, int num_epoch, float beta1GUI = 0.9f, f
 			//}
 		}
 		//validation
-		if (lastBatch) //缺
+		if (lastBatch)
 		{
 			cout << endl;
 
@@ -983,9 +945,7 @@ bool Fcn::TrainCPU_1batch(int num_batch, int num_epoch, float beta1GUI = 0.9f, f
 				noMin = num_epoch;
 			}
 		}
-		
-		debug_noCPU++;
-		return lastBatch; //TRUE if one epoch is finished.
+		return lastBatch;
 	}
 	else{
 		cout << "Network not finished." << endl;
@@ -1077,45 +1037,7 @@ void Fcn::AddFCNlayer(int width) {
 	depth++;
 }
 
-void Fcn::reload_FCN_shader() {
-	GLuint new_shader = InitShader(propoCS.c_str());
-	if (propo_shader != -1)
-	{
-		glDeleteProgram(propo_shader);
-	}
-	propo_shader = new_shader;
-
-	new_shader = InitShader(AdamCS.c_str());
-	if (Adam_shader != -1)
-	{
-		glDeleteProgram(Adam_shader);
-	}
-	Adam_shader = new_shader;
-
-	new_shader = InitShader("shaders/debug_evaluate_cs.glsl");
-	if (debug_shader != -1)
-	{
-		glDeleteProgram(debug_shader);
-	}
-	debug_shader = new_shader;
-}
-
-void Fcn::Finish(float* matLoc, int matSize, int paraSize) {
-//void Fcn::Finish(FcnSSBO paras){ 
-//void Fcn::Finish(float* wLoc, float* bLoc) {
-//	float* wLoc = paras.Weights();
-//	float* bLoc = paras.Bias();
-
-	float* wLoc = matLoc;
-	float* bLoc = matLoc + matSize;
-
-	float* dMatLoc = matLoc + paraSize;
-	float* mMatLoc = matLoc + 2 * paraSize;
-	float* vMatLoc = matLoc + 3 * paraSize;
-	float* dbVecLoc = matLoc + paraSize + matSize;
-	float* mbVecLoc = matLoc + 2 * paraSize + matSize;
-	float* vbVecLoc = matLoc + 3 * paraSize + matSize;
-
+void Fcn::Finish(float* wLoc, float* bLoc) {
 	DataNode Node("output", wOut);
 	nodes.push_back(Node);
 	//nodes.push_back(Node);
@@ -1130,8 +1052,12 @@ void Fcn::Finish(float* matLoc, int matSize, int paraSize) {
 		size_vec += layers[i].wBottom;
 	}
 
-	float* weightPt = wLoc;
-	float* biasPt = bLoc;
+	dMatLoc = new float[size_mat]();
+	mMatLoc = new float[size_mat]();
+	vMatLoc = new float[size_mat]();
+	dbVecLoc = new float[size_vec]();
+	mbVecLoc = new float[size_vec]();
+	vbVecLoc = new float[size_vec]();
 
 	float* dMatPt = dMatLoc;
 	float* mMatPt = mMatLoc;
@@ -1140,38 +1066,26 @@ void Fcn::Finish(float* matLoc, int matSize, int paraSize) {
 	float* mbVecPt = mbVecLoc;
 	float* vbVecPt = vbVecLoc;
 
-	int weightShift = 0;
-	int biasShift = 0;
+	float* weightPt = wLoc;
+	float* biasPt = bLoc;
 	for (int i = 0; i < depth; i++) {
-		weightPt = wLoc + weightShift;
-		dMatPt = dMatLoc + weightShift;
-		mMatPt = mMatLoc + weightShift;
-		vMatPt = vMatLoc + weightShift;
-	
-		biasPt = bLoc + biasShift;
-		dbVecPt = dbVecLoc + biasShift;
-		mbVecPt = mbVecLoc + biasShift;
-		vbVecPt = vbVecLoc + biasShift;
-
 		layers[i].Malloc(weightPt, biasPt, dMatPt, dbVecPt, mMatPt, mbVecPt, vMatPt, vbVecPt);
 		layers[i].InitData();
 
-		weightShift += layers[i].wTop*layers[i].wBottom;// *sizeof(float);
-		biasShift += layers[i].wBottom;// *sizeof(float);
+		weightPt += layers[i].wTop*layers[i].wBottom;// *sizeof(float);
+		biasPt += layers[i].wBottom;// *sizeof(float);
 
-		//dMatPt += layers[i].wTop*layers[i].wBottom;// *sizeof(float);
-		//mMatPt += layers[i].wTop*layers[i].wBottom;// *sizeof(float);
-		//vMatPt += layers[i].wTop*layers[i].wBottom;// *sizeof(float);
-		//dbVecPt += layers[i].wBottom;// *sizeof(float);
-		//mbVecPt += layers[i].wBottom;// *sizeof(float);
-		//vbVecPt += layers[i].wBottom;// *sizeof(float);
+		dMatPt += layers[i].wTop*layers[i].wBottom;// *sizeof(float);
+		mMatPt += layers[i].wTop*layers[i].wBottom;// *sizeof(float);
+		vMatPt += layers[i].wTop*layers[i].wBottom;// *sizeof(float);
+		dbVecPt += layers[i].wBottom;// *sizeof(float);
+		mbVecPt += layers[i].wBottom;// *sizeof(float);
+		vbVecPt += layers[i].wBottom;// *sizeof(float);
 	}
 
 	matSize = size_mat;
 	matPt = wLoc;
 	matMin = new float[matSize];
-
-	reload_FCN_shader();
 
 	finishFlag = TRUE;
 }
@@ -1182,6 +1096,15 @@ Fcn::~Fcn() {
 	}
 	for (int i = 0; i < layers.size(); i++) {
 		layers[i].FreeMem();
+	}
+
+	if (finishFlag) {
+		delete[] dMatLoc;
+		delete[] mMatLoc;
+		delete[] vMatLoc;
+		delete[] dbVecLoc;
+		delete[] mbVecLoc;
+		delete[] vbVecLoc;
 	}
 
 	for (int i = 0; i < dataSize; i++) {

@@ -11,10 +11,13 @@
 TransUBO::TransUBO()
 {
 	binding_loc = 1;
+}
+
+void TransUBO::InitBuffer() {
 	glGenBuffers(1, &ubo);
 	glBindBuffer(GL_UNIFORM_BUFFER, ubo);
 	glBufferData(GL_UNIFORM_BUFFER, sizeof(TransMatrices), &mats.P[0], GL_DYNAMIC_DRAW);
-	glBindBufferBase(GL_UNIFORM_BUFFER, binding_loc, ubo); 
+	glBindBufferBase(GL_UNIFORM_BUFFER, binding_loc, ubo);
 	glBindBuffer(GL_UNIFORM_BUFFER, 0);
 }
 
