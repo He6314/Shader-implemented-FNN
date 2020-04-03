@@ -1,37 +1,35 @@
-﻿  imgui.cpp
-  imgui_demo.cpp
-  imgui_draw.cpp
-  imgui_impl_glut.cpp
-  InitShader.cpp
-  LoadMeshTangents.cpp
-d:\github\opengl-template\loadmeshtangents.cpp(177): warning C4018: “<”: 有符号/无符号不匹配
-  LoadTexture.cpp
-  main.cpp
-d:\github\opengl-template\networkmatrices.hpp(255): warning C4996: 'localtime': This function or variable may be unsafe. Consider using localtime_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+﻿  main.cpp
+d:\github\opengl-template\networkmatrices.hpp(34): warning C4305: “初始化”: 从“double”到“float”截断
+d:\github\opengl-template\networkmatrices.hpp(35): warning C4305: “初始化”: 从“double”到“float”截断
+d:\github\opengl-template\networkmatrices.hpp(280): warning C4996: 'localtime': This function or variable may be unsafe. Consider using localtime_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
   c:\program files (x86)\windows kits\10\include\10.0.16299.0\ucrt\time.h(505): note: 参见“localtime”的声明
-d:\github\opengl-template\networkmatrices.hpp(298): warning C4244: “=”: 从“double”转换到“int”，可能丢失数据
-d:\github\opengl-template\networkmatrices.hpp(302): warning C4244: “=”: 从“double”转换到“int”，可能丢失数据
-d:\github\opengl-template\networkmatrices.hpp(307): warning C4244: “=”: 从“double”转换到“int”，可能丢失数据
-d:\github\opengl-template\networkmatrices.hpp(316): warning C4244: “=”: 从“double”转换到“int”，可能丢失数据
-d:\github\opengl-template\networkmatrices.hpp(326): warning C4244: “=”: 从“double”转换到“float”，可能丢失数据
-d:\github\opengl-template\networkmatrices.hpp(572): warning C4244: “=”: 从“int”转换到“float”，可能丢失数据
-d:\github\opengl-template\networkmatrices.hpp(573): warning C4244: “=”: 从“int”转换到“float”，可能丢失数据
-d:\github\opengl-template\networkmatrices.hpp(575): warning C4244: “=”: 从“int”转换到“float”，可能丢失数据
-d:\github\opengl-template\networkmatrices.hpp(597): warning C4244: “=”: 从“float”转换到“int”，可能丢失数据
-d:\github\opengl-template\networkmatrices.hpp(673): warning C4244: “=”: 从“int”转换到“float”，可能丢失数据
-d:\github\opengl-template\fcn.hpp(171): warning C4244: “return”: 从“double”转换到“float”，可能丢失数据
-d:\github\opengl-template\fcn.hpp(178): warning C4244: “return”: 从“double”转换到“float”，可能丢失数据
-d:\github\opengl-template\fcn.hpp(320): warning C4305: “初始化”: 从“double”到“float”截断
-d:\github\opengl-template\fcn.hpp(346): warning C4305: “初始化”: 从“double”到“float”截断
-d:\github\opengl-template\main.cpp(153): warning C4312: “类型强制转换”: 从“GLuint”转换到更大的“void *”
-d:\github\opengl-template\main.cpp(166): warning C4305: “参数”: 从“double”到“float”截断
-d:\github\opengl-template\main.cpp(167): warning C4305: “参数”: 从“double”到“float”截断
-d:\github\opengl-template\main.cpp(168): warning C4305: “参数”: 从“double”到“float”截断
-d:\github\opengl-template\main.cpp(216): warning C4312: “类型强制转换”: 从“GLuint”转换到更大的“void *”
-d:\github\opengl-template\main.cpp(454): warning C4244: “初始化”: 从“double”转换到“int”，可能丢失数据
-d:\github\opengl-template\main.cpp(542): warning C4244: “=”: 从“int”转换到“float”，可能丢失数据
-  TransMatrices.cpp
+d:\github\opengl-template\networkmatrices.hpp(323): warning C4244: “=”: 从“double”转换到“int”，可能丢失数据
+d:\github\opengl-template\networkmatrices.hpp(327): warning C4244: “=”: 从“double”转换到“int”，可能丢失数据
+d:\github\opengl-template\networkmatrices.hpp(332): warning C4244: “=”: 从“double”转换到“int”，可能丢失数据
+d:\github\opengl-template\networkmatrices.hpp(341): warning C4244: “=”: 从“double”转换到“int”，可能丢失数据
+d:\github\opengl-template\networkmatrices.hpp(351): warning C4244: “=”: 从“double”转换到“float”，可能丢失数据
+d:\github\opengl-template\networkmatrices.hpp(609): warning C4244: “=”: 从“int”转换到“float”，可能丢失数据
+d:\github\opengl-template\networkmatrices.hpp(610): warning C4244: “=”: 从“int”转换到“float”，可能丢失数据
+d:\github\opengl-template\networkmatrices.hpp(612): warning C4244: “=”: 从“int”转换到“float”，可能丢失数据
+d:\github\opengl-template\networkmatrices.hpp(634): warning C4244: “=”: 从“float”转换到“int”，可能丢失数据
+d:\github\opengl-template\networkmatrices.hpp(728): warning C4244: “=”: 从“int”转换到“float”，可能丢失数据
+d:\github\opengl-template\fcn.hpp(173): warning C4244: “return”: 从“double”转换到“float”，可能丢失数据
+d:\github\opengl-template\fcn.hpp(180): warning C4244: “return”: 从“double”转换到“float”，可能丢失数据
+d:\github\opengl-template\fcn.hpp(322): warning C4305: “初始化”: 从“double”到“float”截断
+d:\github\opengl-template\fcn.hpp(348): warning C4305: “初始化”: 从“double”到“float”截断
+d:\github\opengl-template\fcn.hpp(484): warning C4101: “stopTime”: 未引用的局部变量
+d:\github\opengl-template\fcn.hpp(484): warning C4101: “startTime”: 未引用的局部变量
+d:\github\opengl-template\main.cpp(158): warning C4312: “类型强制转换”: 从“GLuint”转换到更大的“void *”
+d:\github\opengl-template\main.cpp(170): warning C4305: “参数”: 从“double”到“float”截断
+d:\github\opengl-template\main.cpp(171): warning C4305: “参数”: 从“double”到“float”截断
+d:\github\opengl-template\main.cpp(172): warning C4305: “参数”: 从“double”到“float”截断
+d:\github\opengl-template\main.cpp(223): warning C4312: “类型强制转换”: 从“GLuint”转换到更大的“void *”
+d:\github\opengl-template\main.cpp(476): warning C4244: “初始化”: 从“double”转换到“int”，可能丢失数据
+d:\github\opengl-template\main.cpp(494): warning C4244: “=”: 从“double”转换到“int”，可能丢失数据
+d:\github\opengl-template\main.cpp(602): warning C4244: “=”: 从“int”转换到“float”，可能丢失数据
   正在生成代码
-  All 1646 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
+  7 of 1650 functions ( 0.4%) were compiled, the rest were copied from previous compilation.
+    1 functions were new in current compilation
+    4 functions had inline decision re-evaluated but remain unchanged
   已完成代码的生成
   GLtemplate.vcxproj -> D:\GitHub\OpenGL-template\x64\Release\GLtemplate.exe

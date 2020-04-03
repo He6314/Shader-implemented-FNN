@@ -52,13 +52,18 @@ layout(std430, binding = 9) buffer id_buffer{
 	float ids[];
 };
 
+layout(std430, binding = 10) buffer hyperParas{
+	int t;
+	float mBeta1;
+	float mBeta2;
+	float mAlpha;
+};
 //===============================================================
-uniform sampler2D ambTexture;
-
-layout(location = 10) uniform sampler2D buffer0;
+layout(location = 10) uniform sampler2D buffer0;//debug only: ground truth
 layout(location = 11) uniform sampler2D buffer1;
 layout(location = 12) uniform sampler2D buffer2;
 layout(location = 13) uniform sampler2D buffer3;
+layout(location = 14) uniform sampler2D buffer4;
 
 layout(location = 99) uniform int outL;
 
@@ -88,11 +93,38 @@ vec3 YUV2RGB(vec3 yuv){
 	return vec3(R,G,B);
 }
 
+vec3 HSV2RGB(vec3 hsv){
+	float H = hsv.r;
+	float S = hsv.g;
+	float V = hsv.b;
+
+	float h = floor(H*6.0);
+	float f = H*6.0 - h;
+	float p = V * (1.0-S);
+	float q = V * (1.0-f*S);
+	float t = V * (1.0-(1.0-f)*S);
+
+	vec3 c1 = vec3(V,t,p);
+	vec3 c2 = vec3(q,V,p);
+	vec3 c3 = vec3(p,V,t);
+	vec3 c4 = vec3(p,q,V);
+	vec3 c5 = vec3(t,p,V);
+	vec3 c6 = vec3(V,p,q);
+
+	return  step(h,0.9)*c1+step(0.9,h)*(
+			step(h,1.9)*c2+step(1.9,h)*(
+			step(h,2.9)*c3+step(2.9,h)*(
+			step(h,3.9)*c4+step(3.9,h)*(
+			step(h,4.9)*c5+step(4.9,h)*(
+						c6)))));
+}
+
 vec4 Eval(vec3 normal, vec3 view, vec3 light, vec2 tex_coord);
       
 void main(void)
 {
 	vec3 normal = texture(buffer1, tex_coord).xyz;
+	vec3 obj = texture(buffer4, tex_coord).xyz;
 	vec3 view = texture(buffer2, tex_coord).xyz;
 	vec3 light = texture(buffer3, tex_coord).xyz;
 	vec2 tex = texture(buffer2, tex_coord).ww;
@@ -102,21 +134,22 @@ void main(void)
 	
 	if(texture(buffer1, tex_coord).w!=0.0){
 		vec3 yuv = Eval(normal, view, light, tex).rgb;// * textureColor; //texture(buffer0, tex_coord);//
-		fragcolor = vec4(yuv,1.0);//texture(buffer0, tex_coord);//vec4(1.0);//YUV2RGB()//
+		fragcolor =vec4(yuv,1.0);//vec4(YUV2RGB(yuv),1.0);// texture(buffer4, tex_coord);//vec4(1.0);//
 	}
 
 	else
 	{
-
+	//Debug
 	//int idx = int(tex_coord.x*64.0);
-	fragcolor = //vec4(0.0);
+	fragcolor = vec4(0.0);
 		//vec4(abs(mat[paraSize+2])*50.0);
 		//vec4(abs(mat[2])*5.0);
 		//vec4(abs(ids[idx]));
 		//vec4(abs(ids[1]));
 		//vec4(abs(ids[1]));
 		//vec4(mat[paraSize]/5.0);
-		vec4(mat[0]);
+		//vec4(mat[0]);
+		//vec4(abs(mBeta2));
 
 //		if(debugFlag!=1){
 //		 fragcolor = vec4(validData[150]+0.80);}//vec4(abs(aveIn[0])*10);}
@@ -148,19 +181,19 @@ vec4 Eval(vec3 normal, vec3 view, vec3 light, vec2 tex_coord){
 //		int n = int(tex_coord.x/64.0);
 //		nodes[0][i] = trainData[n*32 + i];
 //	}
-	nodes[0][0] = normal.x - aveIn[0];
-	nodes[0][1] = normal.y - aveIn[1];
-	nodes[0][2] = normal.z - aveIn[2];
-	nodes[0][3] = view.x - aveIn[3];
-	nodes[0][4] = view.y - aveIn[4];
-	nodes[0][5] = view.z - aveIn[5];
+	nodes[0][0] = normal.x;// - aveIn[0];
+	nodes[0][1] = normal.y;// - aveIn[1];
+	nodes[0][2] = normal.z;// - aveIn[2];
+	nodes[0][3] = view.x;// - aveIn[3];
+	nodes[0][4] = view.y;// - aveIn[4];
+	nodes[0][5] = view.z;// - aveIn[5];
 //	nodes[0][7] = light.y;
 //	nodes[0][8] = light.z;
 //	nodes[0][6] = light.x;
 //	nodes[0][9] = tex_coord.x;
 //	nodes[0][10] = tex_coord.y;
-//	nodes[0][0] = tex_coord.x;
-//	nodes[0][1] = tex_coord.y;
+//	nodes[0][3] = tex_coord.x;
+//	nodes[0][4] = tex_coord.y;
 
 	int wShift = 0;
 	int bShift = 0;
@@ -185,17 +218,9 @@ vec4 Eval(vec3 normal, vec3 view, vec3 light, vec2 tex_coord){
 		bShift += width[n]; //有点问题？
 	}
 
-	//color.x = nodes[outL][0];// + aveOut[0];//10.*abs(mat[299]);//
-	//color.y = nodes[outL][1];// + aveOut[1];//10.*abs(mat[299]);//
-	//color.z = nodes[outL][2];// + aveOut[2];//10.*abs(mat[299]);//
-	
 	color.x = nodes[outL][0];// + aveOut[0];//10.*abs(mat[299]);//
 	color.y = nodes[outL][1];// + aveOut[1];//10.*abs(mat[299]);//
-	color.z = nodes[outL][2];// + aveOut[2];//10.*abs(mat[299]);//
-
-	//color.x = nodes[0][3] + aveIn[3];
-	//color.y = nodes[0][4] + aveIn[4];
-	//color.z = nodes[0][5] + aveIn[5];
+	color.z = nodes[outL][2];// + aveOut[2];//10.*abs(mat[299]);//];
 
 	//color = vec4(vec3(nodes[outL][0]),1.0);//vec4(mat[15]+1.0f);
 	return color;

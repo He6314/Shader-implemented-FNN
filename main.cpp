@@ -27,6 +27,14 @@
 
 #define PI 3.141592653589793f
 
+//network shape
+const int INPUT_DIM = 6;//5;//2;//
+const int OUTPUT_DIM =  3;//1;//
+int numHiddenLayer = 8; //16;// 12;//4; //   6;// 5; //
+int wHidden=  8; //16; //12; //4; //    6;//5;//    10;//8;//
+//int batchSize = 32;// 4;// 8;// 16;//128;//  64;// 1;//
+//float alpha = 0.00003f;// 0.00025f;the first alpha that works
+
 static const std::string mesh_name = "models/BLJ/BlackLeatherJacket.obj";
 //static const std::string mesh_name = "models/sphere.obj";
 static const std::string texture_name = "models/BLJ/Main Texture/[Albedo].jpg";
@@ -41,18 +49,18 @@ float posY = 0.4f;//0.0f;
 float posX = 0.4f;//0.0f;
 float posZ = 0.7f;//0.0f;
 
-const int NUM_BUFFERS = 4;
+const int NUM_BUFFERS = 5;
 const int NUM_PASS = 3;
 
 const int MAX_PIXEL = 1000000;
-const int INPUT_DIM = 6;
-const int OUTPUT_DIM =  3;//1;//
 
 GLuint paraBuffers[NUM_BUFFERS] = { -1 };
 GLuint fbo = -1;
 GLuint depth_rbo;
 
 int num_sample = 0;
+int numTrain = 0;
+int numValid = 0;
 
 GLfloat bufferValue[NUM_BUFFERS][4];
 float bufferX[MAX_PIXEL][INPUT_DIM+1] = { 0 }; // 3 for normal, 3 for view, 3 for light direction, 2 for texCoord, 1 for index;
@@ -77,9 +85,6 @@ static const std::string fragment_shader[NUM_PASS] = { "shaders/Phong_fs.glsl", 
 
 int wIn = INPUT_DIM;
 int wOut = OUTPUT_DIM;
-int numHiddenLayer = 8; //6;// 12;//5; //
-int wHidden = 8; // 6;//5;//  4; // 12; // 10;//8;//
-float alpha = 0.00003f;// 0.00025f;the first that works
 
 int quadIn = 2;
 int quadOut = 3;
@@ -103,15 +108,15 @@ DataSSBO fcnData(INPUT_DIM, OUTPUT_DIM);
 Fcn quadNetwork(2, 3);
 FcnSSBO quadMat(2, 3, 8, 8);
 
-char* fname = new char[50];
+char fname[50];
 
 int nbEpoch = 0;
 int nbBatch = 0;
+int nbFrame = 0;
 bool trainFlag = FALSE;
-float beta1 = 0.5f;
-float beta2 = 0.5f;//distfunc
+//float beta1 = 0.5f;
+//float beta2 = 0.5f;//distfunc
 //alpha
-int batchSize = 32;
 
 bool testQuad = FALSE;
 
@@ -152,7 +157,6 @@ void draw_gui()
 
 	ImGui::Image((void*)texture_id, ImVec2(128.f, 128.f), ImVec2(0.0, 1.0), ImVec2(1.0, 0.0));
 
-
 	ImGui::InputText("Filename", &fname[0], 50);
 	ImGui::SameLine();
 	if (ImGui::Button("Load"))
@@ -162,12 +166,15 @@ void draw_gui()
 	ImGui::End();
 
 	ImGui::Begin("Training Paras");
-	ImGui::SliderInt("Batch Size", &batchSize, 1, 128);
-	ImGui::SliderFloat("Beta1", &beta1, 0.1f, 1.f- 1e-5,  "%.5f", 2.5f);
-	ImGui::SliderFloat("Beta2", &beta2, 0.1f, 1.f- 1e-5, "%.5f", 2.5f);
-	ImGui::SliderFloat("Alpha", &alpha, 1e-8, 1e-2, "%.5f", 2.5f);
+	ImGui::SliderInt("Batch Size", &fcnMat.paras.batchSize, 1, 128);
+	ImGui::SliderFloat("Beta1", &fcnMat.paras.mBeta1, 0.1f, 1.f- 1e-5,  "%.5f", 2.5f);
+	ImGui::SliderFloat("Beta2", &fcnMat.paras.mBeta2, 0.1f, 1.f- 1e-5, "%.5f", 2.5f);
+	ImGui::SliderFloat("Alpha", &fcnMat.paras.mAlpha, 1e-8, 1e-2, "%.5f", 2.5f);
 	ImGui::Checkbox("Simple Quad", &testQuad);
 	ImGui::End();
+
+	fcnMat.paras.t = nbBatch + 1;
+	fcnMat.PassHParasToShader();
 
 	if (!testQuad) {
 		ImGui::Begin("Handles");
@@ -213,7 +220,7 @@ void draw_gui()
 	//ImGui::SetNextWindowPos(ImVec2(875, 0));
 	ImGui::Begin("Buffers");
 	for (int i = 0; i < NUM_BUFFERS; i++) {
-		ImGui::Image((void*)paraBuffers[i], ImVec2(200.f, 200.f), ImVec2(0.0, 1.0), ImVec2(1.0, 0.0));
+		ImGui::Image((void*)paraBuffers[i], ImVec2(400.f, 400.f), ImVec2(0.0, 1.0), ImVec2(1.0, 0.0));
 		ImGui::NewLine();
 	}
 
@@ -234,24 +241,23 @@ void display()
    const float aspect_ratio = float(w) / float(h);
 
 
-   //Ò»ÁîÒ»¶¯-----------------------------------------------------
+   //1 batch per frame-----------------------------------------------------
    if (trainFlag && nbEpoch < 800) {
 	//------------------------------------------------------------
 
 	//-------------------------------------------------------------
 	//CPU   
-	//bool completeEpoch = network.TrainCPU_1batch(nbBatch, nbEpoch, beta1, beta2, alpha);
-	  
+	//bool completeEpoch = network.TrainCPU_1batch(nbBatch, nbEpoch, fcnMat.paras.mBeta1, fcnMat.paras.mBeta2, fcnMat.paras.mAlpha);
+	//fcnMat.PassMatsToShader();
+
 	 //GPU
 	  fcnData.UpdateBatch(nbBatch);
-	  fcnData.PassDataToShader();
-	  bool completeEpoch = //FALSE;
-		 network.TrainShader_1batch(nbBatch, nbEpoch, beta1, beta2, alpha);
+	  bool completeEpoch = network.TrainShader_1batch(nbBatch, nbEpoch, numTrain, numValid);//13s
 	 
 
-	   glBindBuffer(GL_SHADER_STORAGE_BUFFER, fcnData.idSSBO);
-	   GLfloat *ptr;
-	   ptr = (GLfloat *)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_WRITE); //GL_READ_WRITE?
+	  // glBindBuffer(GL_SHADER_STORAGE_BUFFER, fcnData.idSSBO);
+	  // GLfloat *ptr = fcnData.ptrGPU();
+	  // ptr = (GLfloat *)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_WRITE); //GL_READ_WRITE?
 	   //std::cerr << ptr[1] << ", y=" << ptr[2] << ", z=" << ptr[3] << endl;
 	   //for (int i = 0; i < 16; i++) {
 		//   std::cerr << ptr[i] << "\t";
@@ -259,22 +265,40 @@ void display()
 	//   std::cerr << std::endl;
 	//   std::cerr << "-------------------------------------------------" << std::endl;
 	   
-	   std::cerr << "LOSS: " << ptr[2] << std::endl;
-	   glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+	//   std::cerr << "LOSS: " << ptr[2] << std::endl;
+	 //  glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
 
 	 //  fcnMat.printMat(1); //0: paras; 1:d; 2:m; 3:v;
-	   //glBindBuffer(GL_SHADER_STORAGE_BUFFER, fcnData.idSSBO);
-	   //GLfloat *ptr;
-	   //ptr = (GLfloat *)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_WRITE); //GL_READ_WRITE?
-	   //std::cerr << nbBatch<< ", LOSS: " << ptr[2] << endl;
-	   //glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
-
-	   //cerr << nbBatch << endl;
+	//   cerr << nbBatch << endl;
 	   
 	   
 	   nbBatch++;
 	   if (completeEpoch) {
+		   std::cerr << "EPOCH " << nbEpoch << std::endl;
+		   float loss = 0;
+		   glBindBuffer(GL_SHADER_STORAGE_BUFFER, fcnData.train_loss());
+		   GLfloat *ptr;
+		   ptr = (GLfloat *)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_WRITE); //GL_READ_WRITE?
+		   for (int i = 0; i < numTrain; i++)
+			   loss += ptr[i];
+			//std::cerr << i << ", LOSS: " << ptr[i] << endl;
+		   glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+		   loss /= numTrain;
+		   std::cerr << "TRAIN LOSS: " << loss << std::endl;
+
+		   loss = 0;
+		   glBindBuffer(GL_SHADER_STORAGE_BUFFER, fcnData.valid_loss());
+		   ptr = (GLfloat *)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_WRITE); //GL_READ_WRITE?
+		   for (int i = 0; i < numValid; i++)
+			   loss += ptr[i];
+			   //std::cerr << i << ", LOSS: " << ptr[i] << endl;
+
+		   glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
+		   loss /= numValid;
+		   std::cerr << "VALID LOSS: " << loss << std::endl;
+
 		   nbEpoch++;
+		  // fcnMat.paras.mAlpha /= 2.0;
 		   nbBatch = 0;
 	   }
 	   if (nbEpoch >= 800) {
@@ -321,7 +345,7 @@ void display()
 	   //DRAW IN BUFFERS:
 	   //glClearColor(0.35f, 0.35f, 0.35f, 0.0f);
 	   glBindFramebuffer(GL_FRAMEBUFFER, fbo); // Render to FBO, all gbuffer textures
-	   const GLenum drawBuffers[NUM_BUFFERS] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2, GL_COLOR_ATTACHMENT3 };
+	   const GLenum drawBuffers[NUM_BUFFERS] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2, GL_COLOR_ATTACHMENT3,  GL_COLOR_ATTACHMENT4 };
 	   glDrawBuffers(NUM_BUFFERS, drawBuffers);
 	   glClearColor(0.3f, 0.5f, 0.5f, 0.0f);
 	   //glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
@@ -360,13 +384,6 @@ void display()
 		  // glUniform1i(bufferLoc, i);
 	   //}
 
-	   //------------TEMP---------------------
-	   glActiveTexture(GL_TEXTURE10);
-	   glBindTexture(GL_TEXTURE_2D, texture_id);
-	   tex_loc = glGetUniformLocation(shader_program[1], "ambTexture");
-	   glUniform1i(tex_loc, 10);
-	   //-------------------------------------
-
 	   glActiveTexture(GL_TEXTURE0);
 	   glBindTexture(GL_TEXTURE_2D, paraBuffers[0]);
 	   glUniform1i(10, 0);
@@ -383,6 +400,10 @@ void display()
 	   glBindTexture(GL_TEXTURE_2D, paraBuffers[3]);
 	   glUniform1i(13, 3);
 
+	   glActiveTexture(GL_TEXTURE4);
+	   glBindTexture(GL_TEXTURE_2D, paraBuffers[4]);
+	   glUniform1i(14, 4);
+
 	   transUBO.PassDataToShader();
 	   aves.PassDataToShader(aveVectorX, aveVectorY);
 
@@ -393,17 +414,18 @@ void display()
 	   glDepthMask(GL_TRUE);
 
 //===========================================================================================
-	   //glQueryCounter(queryID[1], GL_TIMESTAMP);
-	   //GLint stopTimerAvailable = 0;
-	   //while (!stopTimerAvailable) {
-		  // glGetQueryObjectiv(queryID[1],
-			 //  GL_QUERY_RESULT_AVAILABLE,
-			 //  &stopTimerAvailable);
-	   //}
+	 //  glQueryCounter(queryID[1], GL_TIMESTAMP);
+	 //  GLint stopTimerAvailable = 0;
+	 //  while (!stopTimerAvailable) {
+		//   glGetQueryObjectiv(queryID[1],
+		//	   GL_QUERY_RESULT_AVAILABLE,
+		//	   &stopTimerAvailable);
+	 //  }
 
-	   //glGetQueryObjectui64v(queryID[0], GL_QUERY_RESULT, &startTime);
-	   //glGetQueryObjectui64v(queryID[1], GL_QUERY_RESULT, &stopTime);
-	   //printf("Time spent on the GPU: %f ms\n", (stopTime - startTime) / 1000000.0);
+	 //  glGetQueryObjectui64v(queryID[0], GL_QUERY_RESULT, &startTime);
+	 //  glGetQueryObjectui64v(queryID[1], GL_QUERY_RESULT, &stopTime);
+	 //  std::cerr << "Frame " << nbFrame << " Time spent on the GPU: " << (stopTime - startTime) / 1000000.0 << " ms" << std::endl;
+		//nbFrame++;
 //===========================================================================================
    }
    
@@ -414,7 +436,7 @@ void display()
 	   glClearColor(0.35f, 0.35f, 0.35f, 0.0f);
 
 	   quadMat.PassCtrlToShader();
-	   quadMat.PassDataToShader();
+	   quadMat.PassMatsToShader();
 
 	   glDepthMask(GL_FALSE);
 	   glBindVertexArray(quad_vao);
@@ -425,10 +447,9 @@ void display()
 
    draw_gui();
    glutSwapBuffers();
-
-
 }
 
+//Abandoned: updated to FcnSSBO
 float* arrangeBuffer(int wIn, int wOut, int wHidden, int numHiddenLayer) {
 	int weightSize = fcnMat.wSize; //wIn*wHidden + wOut*wHidden + (numHiddenLayer-1)*wHidden*wHidden;
 	int biasSize = fcnMat.bSize;// wOut + numHiddenLayer*wHidden;
@@ -439,7 +460,7 @@ float* arrangeBuffer(int wIn, int wOut, int wHidden, int numHiddenLayer) {
 }
 
 void CPUtest(int trainSize, int validSize) {
-	network.SetTrainData(trainX, trainY, trainSize, batchSize);
+	network.SetTrainData(trainX, trainY, trainSize, fcnMat.paras.batchSize);
 	network.SetValidData(validX, validY, validSize);
 
 	trainFlag = true;
@@ -450,9 +471,28 @@ void CPUtest(int trainSize, int validSize) {
 	//fcnMat.WriteToFile();
 }
 
+void releaseData(int n) {
+	if (n > 0) {
+		int numTrain = n * 0.8;
+		int numValid = n - numTrain;
+		for (int i = 0; i < numTrain; i++) {
+			delete[] trainX[i];
+			delete[] trainY[i];
+		}
+		for (int i = 0; i < numValid; i++) {
+			delete[] validX[i];
+			delete[] validY[i];
+		}
+		delete[] trainX;
+		delete[] trainY;
+		delete[] validX;
+		delete[] validY;
+	}
+}
+
 void splitData(int n) {
-	int numTrain = n*0.8;
-	int numValid = n - numTrain;
+	numTrain = n*0.8;
+	numValid = n - numTrain;
 
 	trainX = new float*[numTrain];
 	trainY = new float*[numTrain];
@@ -515,22 +555,42 @@ void loadBuffer() {
 				glReadPixels(i, j, 1, 1, GL_RGBA, GL_FLOAT, isFore);
 
 				if (isFore[3] == 1.0) {
+					//normal
 					bufferX[num_sample][0] = isFore[0];
 					bufferX[num_sample][1] = isFore[1];
-					bufferX[num_sample][2] = isFore[2];//normal
+					bufferX[num_sample][2] = isFore[2];
 
+					//view
 					float temp[4];
 					glReadBuffer(GL_COLOR_ATTACHMENT2);
-					glPixelStorei(GL_PACK_ALIGNMENT, 2);
+					glPixelStorei(GL_PACK_ALIGNMENT, 4);
 					glReadPixels(i, j, 1, 1, GL_RGBA, GL_FLOAT, temp);
 					bufferX[num_sample][3] = temp[0];
 					bufferX[num_sample][4] = temp[1];
-					bufferX[num_sample][5] = temp[2];//view
-					//bufferX[num_sample][9] = temp[3];//texCoord.x
-					//bufferX[num_sample][0] = temp[3];//texCoord.y;
+					bufferX[num_sample][5] = temp[2];
+
+					//object coordinate position
+					//float temp[4];
+					//glReadBuffer(GL_COLOR_ATTACHMENT4);
+					//glPixelStorei(GL_PACK_ALIGNMENT, 4);
+					//glReadPixels(i, j, 1, 1, GL_RGBA, GL_FLOAT, temp);
+					//bufferX[num_sample][3] = temp[0];
+					//bufferX[num_sample][4] = temp[1];
+					//bufferX[num_sample][5] = temp[2];
+
+					//tex_coord
+					//float temp[4];
+					//glReadBuffer(GL_COLOR_ATTACHMENT2);
+					//glPixelStorei(GL_PACK_ALIGNMENT, 4);
+					//glReadPixels(i, j, 1, 1, GL_RGBA, GL_FLOAT, temp);
+					//bufferX[num_sample][3] = temp[3];//texCoord.x
+					//glReadBuffer(GL_COLOR_ATTACHMENT3);
+					//glPixelStorei(GL_PACK_ALIGNMENT, 4);
+					//glReadPixels(i, j, 1, 1, GL_RGBA, GL_FLOAT, temp);
+					//bufferX[num_sample][4] = temp[3];//texCoord.y;
 
 					//glReadBuffer(GL_COLOR_ATTACHMENT3);
-					//glPixelStorei(GL_PACK_ALIGNMENT, 3);
+					//glPixelStorei(GL_PACK_ALIGNMENT, 4);
 					//glReadPixels(i, j, 1, 1, GL_RGBA, GL_FLOAT, temp);
 					//bufferX[num_sample][6] = temp[0];
 					//bufferX[num_sample][7] = temp[1];
@@ -576,8 +636,9 @@ void loadBuffer() {
 				glBindFramebuffer(GL_FRAMEBUFFER, 0);
 			}
 
-		fcnData.BatchSize(batchSize);
+		fcnData.BatchSize(fcnMat.paras.batchSize);
 		fcnData.SplitData();
+		fcnData.PassDataToShader();
 
 	std::cout << "Number of samples now: "<< num_sample << std::endl;
 }
@@ -725,7 +786,7 @@ void initOpenGl()
    //network.Finish(loc, biasLoc);
    network.Finish(loc, weightSize, paraSize);
    fcnMat.PassCtrlToShader();
-   fcnMat.PassDataToShader();
+   fcnMat.PassMatsToShader();
 //===================================================================================/////////////////
    quadMat.InitBuffer(1);
    quadMat.InitData();
@@ -759,7 +820,7 @@ void keyboard(unsigned char key, int x, int y)
 	  case 'i':
 	  case 'I':
 		  fcnMat.InitData();
-		  fcnMat.PassDataToShader();
+		  fcnMat.PassMatsToShader();
 		  quadMat.InitData();
 		  break;
 
@@ -878,7 +939,7 @@ int main (int argc, char **argv)
    glutInit(&argc, argv); 
    glutInitDisplayMode (GLUT_DOUBLE | GLUT_RGBA | GLUT_DEPTH);
    glutInitWindowPosition (5, 5);
-   glutInitWindowSize(700,700);// (1280, 720);
+   glutInitWindowSize(700,700);//(1920,1080);// (1280, 720); //(640,480);// 
    int win = glutCreateWindow ("OpenGL Template");
 
    printGlInfo();
@@ -900,6 +961,7 @@ int main (int argc, char **argv)
    glutMainLoop();
 
    glutDestroyWindow(win);
+   releaseData(num_sample);
    return 0;		
 }
 

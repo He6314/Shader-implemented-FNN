@@ -35,6 +35,10 @@ layout(std430, binding = 9) buffer id_buffer{
 	float ids[];
 };
 
+layout(std430, binding = 11) buffer loss_buffer{
+	float loss[];
+};
+
 layout(location = 4) uniform float time;//debug
 //===============================================================
 
@@ -57,9 +61,9 @@ float dActivateFunc(float x) {
 };
 
 void Forward(){
-	uint index = uint((ids[0]+gl_GlobalInvocationID.x)*(width[0]+width[depth]+3));//uint(ids[gl_GlobalInvocationID.x]);///*(+3);
+	int index = int((gl_GlobalInvocationID.x)*(width[0]+width[depth]+3));//uint(ids[gl_GlobalInvocationID.x]);///*(+3);
 	for(int i=0;i<width[0];i++){
-		aNodes[0][i] = trainData[index+i];
+		aNodes[0][i] = validData[index+i];
 	}
 
 	int wShift = 0;
@@ -70,6 +74,7 @@ void Forward(){
 
 		for(int i=0;i<wBottom;i++){
 			aNodes[n][i] = 0;
+			zNodes[n][i] = 0;
 			for(int j=0;j<wTop;j++){
 				int wLoc = wShift+i*wTop+j;
 				float weight = mat[wLoc];
@@ -78,26 +83,28 @@ void Forward(){
 			int bLoc = bShift + i;
 			float bias = mat[bLoc];
 			zNodes[n][i] += bias;
-			if(n<depth)
+			//if(n<depth)
 			aNodes[n][i] = activateFunc(zNodes[n][i]);
+			//else
+			//aNodes[n][i] = zNodes[n][i];
 		}
 		wShift += width[n-1]*width[n];
 		bShift += width[n];
 	}
 	
+	loss[gl_GlobalInvocationID.x]= 0;
 	for(int i=0;i<width[depth];i++){
-		float groundTruth = trainData[index+width[depth]+i];
-		loss[i] = (aNodes[depth][i] - groundTruth)* dActivateFunc(zNodes[depth][i]);
-		ids[2] += loss[i];
+		float groundTruth = validData[index+width[0]+i];
+		loss[gl_GlobalInvocationID.x] += (aNodes[depth][i] - groundTruth)*(aNodes[depth][i] - groundTruth);//aNodes[depth][i];//
 	}
+	loss[gl_GlobalInvocationID.x] /= width[depth];
 }
 
 void main(void)
 {
-	ids[2] = 0;
+//	ids[2] = 0;
 	Forward();
-
-	ids[2] /= 32.0;
-	ids[1] = sin(time);
+	//ids[2] /= 32.0;
+	//ids[1] = sin(time);
 }
 

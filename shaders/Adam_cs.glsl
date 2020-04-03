@@ -46,7 +46,13 @@ layout(std430, binding = 9) buffer id_buffer{
 };
 
 layout(std430, binding = 10) buffer hyperParas{
-	int x;
+	int t;
+	int batchSize;
+	//int validNumber;
+
+	float mBeta1;
+	float mBeta2;
+	float mAlpha;
 };
 
 //===============================================================
@@ -66,12 +72,12 @@ float dNodes[MAX_WIDTH][MAX_DEPTH];
 float loss[MAX_WIDTH];
 
 const float bias_factor = 2.0f;
-float mEps = 1e-8;
-float mBeta1 = 0.9;
-float mBeta2 = 0.999;
-float mAlpha = 0.002;
-
-int t = 1;
+const float mEps = 1e-8;
+//float mBeta1 = 0.9;
+//float mBeta2 = 0.999;
+//float mAlpha = 0.002;
+//
+//int t = 1;
 
 float hat1 = 1.0f / (1.0f - pow(mBeta1, t));
 float hat2 = 1.0f / (1.0f - pow(mBeta2, t));

@@ -6,6 +6,7 @@
 #include <random>
 #include <math.h>
 #include <vector>
+#include <chrono>
 
 #include"InitShader.h"
 #include "NetworkMatrices.hpp"
@@ -117,7 +118,8 @@ private:
 
 	GLuint propo_shader = -1;
 	GLuint Adam_shader = -1;
-	GLuint debug_shader = -1;
+	GLuint trainLoss_shader = -1;
+	GLuint validLoss_shader = -1;
 
 	bool finishFlag = FALSE;
 
@@ -135,7 +137,7 @@ public:
 
 	float* Evaluate(float* x); //not used
 
-	bool TrainShader_1batch(int num_batch, int num_epoch, float beta1, float beta2, float alpha);
+	bool TrainShader_1batch(int num_batch, int num_epoch, int num_train, int num_valid);
 
 	void SetTrainData(float** x, float** y, int size, int bSize);
 	void SetValidData(float** x, float** y, int size);
@@ -477,7 +479,13 @@ float* Fcn::Evaluate(float* x) {
 	return nodes[depth].aVec;
 }
 
-bool Fcn::TrainShader_1batch(int num_batch, int num_epoch, float beta1GUI = 0.9f, float beta2GUI = 0.999f, float alphaGUI = 0.0001f) {
+bool Fcn::TrainShader_1batch(int num_batch, int num_epoch, int num_train, int num_valid) {
+	//=========================================================
+		GLuint64 startTime, stopTime;
+		unsigned int queryID[2];
+		glGenQueries(2, queryID);
+		glQueryCounter(queryID[0], GL_TIMESTAMP);
+	//========================================================
 	if (num_batch == 0) { // need modification. Loop is not necessary
 		for (int i = 0; i < depth; i++) {
 			layers[i].ClearD();
@@ -489,21 +497,50 @@ bool Fcn::TrainShader_1batch(int num_batch, int num_epoch, float beta1GUI = 0.9f
 		const int time_ms = glutGet(GLUT_ELAPSED_TIME);
 		float t_sec = 0.001f*time_ms;
 		glProgramUniform1f(propo_shader, 4, t_sec);//debug
-		glDispatchCompute(batchSize, 1, 1);
+		glDispatchCompute(batchSize, 1, 1);//
 		glMemoryBarrier(GL_ALL_BARRIER_BITS);
 
 		glUseProgram(Adam_shader);
 		glDispatchCompute(1, 1, 1);
 		glMemoryBarrier(GL_ALL_BARRIER_BITS);
 
-		//glUseProgram(debug_shader);
-		//glDispatchCompute(1, 1, 1);
-		//glMemoryBarrier(GL_ALL_BARRIER_BITS);
+		//cerr << "batch: " << num_batch << endl;
+		//===========================================================================================
+	   //glQueryCounter(queryID[1], GL_TIMESTAMP);
+	   //GLint stopTimerAvailable = 0;
+	   //while (!stopTimerAvailable) {
+		  // glGetQueryObjectiv(queryID[1],
+			 //  GL_QUERY_RESULT_AVAILABLE,
+			 //  &stopTimerAvailable);
+	   //}
+
+	   //glGetQueryObjectui64v(queryID[0], GL_QUERY_RESULT, &startTime);
+	   //glGetQueryObjectui64v(queryID[1], GL_QUERY_RESULT, &stopTime);
+	   //cout << "Time spent on the GPU training: " << (stopTime - startTime) / 1000000.0 << " ms." << endl;
+//===========================================================================================
 
 		return FALSE;
 	}
 	
-	else return TRUE;
+	else {
+		glUseProgram(propo_shader);
+		glDispatchCompute(dataSize - batchSize/(num_batch-1), 1, 1);//last batch
+		glMemoryBarrier(GL_ALL_BARRIER_BITS);
+
+		glUseProgram(Adam_shader);
+		glDispatchCompute(1, 1, 1);
+		glMemoryBarrier(GL_ALL_BARRIER_BITS);
+
+		glUseProgram(trainLoss_shader);
+		glDispatchCompute(num_train, 1, 1);
+		glMemoryBarrier(GL_ALL_BARRIER_BITS);
+		//validation loss
+		glUseProgram(validLoss_shader);
+		glDispatchCompute(num_valid, 1, 1);
+		glMemoryBarrier(GL_ALL_BARRIER_BITS);
+
+	 return TRUE;
+	}
 	//cerr << "CPU: " << debug_noCPU << ", GPU: " << debug_noGPU << endl;
 	//cerr << debug_noGPU << ", x=";
 }
@@ -805,9 +842,11 @@ void Fcn::TrainCPU_1epoch(int n, float beta1GUI = 0.9f, float beta2GUI = 0.999f,
 
 bool Fcn::TrainCPU_1batch(int num_batch, int num_epoch, float beta1GUI = 0.9f, float beta2GUI = 0.999f, float alphaGUI = 0.0001f) {
 	if (finishFlag) {
-		float beta1 = beta1GUI;//缺
-		float beta2 = beta2GUI;//缺
-		float alpha = alphaGUI;//缺
+		auto start = std::chrono::steady_clock::now();
+
+		float beta1 = beta1GUI;
+		float beta2 = beta2GUI;
+		float alpha = alphaGUI;
 
 		bool firstBatch = (num_batch == 0);//缺
 		bool lastBatch = FALSE;//缺
@@ -868,6 +907,10 @@ bool Fcn::TrainCPU_1batch(int num_batch, int num_epoch, float beta1GUI = 0.9f, f
 				layers[j].Adam(num_batch + 1, beta1, beta2, alpha);//？？？
 			}
 
+			auto end = chrono::steady_clock::now();
+			chrono::duration<double, std::milli> elapsed = end - start; // std::micro 表示以微秒为时间单位
+			//cout << "Batch No." << num_batch << ", Time spent on the CPU training: " << elapsed.count() << " ms." << endl;
+
 			//Calculate Loss //不需要
 			for (int i = 0; i < batchSize; i++) {
 				for (int j = 0; j < depth; j++) {
@@ -882,6 +925,7 @@ bool Fcn::TrainCPU_1batch(int num_batch, int num_epoch, float beta1GUI = 0.9f, f
 			error = sqrt(error);
 			trainErrors.push_back(error);
 
+			//Debug: whether the network is training or not
 			cout << "\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b";
 			cout << "\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b\b";
 			cout << "LOSS:\t" << fixed << setprecision(6) << error;// << ", " << nodes[depth].aVec[0] - nodes[depth].groundTruth[0] << ", " << nodes[depth].aVec[1] - nodes[depth].groundTruth[1] << ", " << nodes[depth].aVec[2] - nodes[depth].groundTruth[2];
@@ -1092,12 +1136,19 @@ void Fcn::reload_FCN_shader() {
 	}
 	Adam_shader = new_shader;
 
-	new_shader = InitShader("shaders/debug_evaluate_cs.glsl");
-	if (debug_shader != -1)
+	new_shader = InitShader("shaders/trainLoss_cs.glsl");
+	if (trainLoss_shader != -1)
 	{
-		glDeleteProgram(debug_shader);
+		glDeleteProgram(trainLoss_shader);
 	}
-	debug_shader = new_shader;
+	trainLoss_shader = new_shader;
+
+	new_shader = InitShader("shaders/validLoss_cs.glsl");
+	if (validLoss_shader != -1)
+	{
+		glDeleteProgram(validLoss_shader);
+	}
+	validLoss_shader = new_shader;
 }
 
 void Fcn::Finish(float* matLoc, int matSize, int paraSize) {

@@ -27,6 +27,15 @@ struct ControlParas {
 	int paraSize = MAX_WIDTH * MAX_WIDTH * MAX_DEPTH + MAX_WIDTH * MAX_DEPTH;
 };
 
+struct TrainingParas {
+	int t = 1;
+	int batchSize = 8;
+	//saint validNumber = 0;
+	float mBeta1 = 0.8;// 0.5f;//0.9;
+	float mBeta2 = 0.9;// 0.5f;//0.999;
+	float mAlpha = 0.00025f; //0.0005f;// 0.0015f;// 0.00003f;//0.002;
+};
+
 class FcnSSBO {
 public:
 	int wIn;
@@ -34,13 +43,15 @@ public:
 	int numHiddenLayer;
 	int wHidden;
 
+	TrainingParas paras;
+
 	int wSize;
 	int bSize;
 	int matSize;
 
 	float *inputAve, *outputAve;
 
-	int Depth() { return paras.depth; }
+	int Depth() { return shape.depth; }
 
 	int Width(int nbLayer) { return layerWidths[nbLayer]; }
 
@@ -59,7 +70,7 @@ public:
 			for (int n = 1; n < nbLayer + 1; n++) {
 				bShift += layerWidths[n];
 			}
-			return paras.weightSize + bShift + nb1;
+			return shape.weightSize + bShift + nb1;
 		}
 	}
 
@@ -104,10 +115,10 @@ public:
 		GLfloat *ptr;
 		ptr = (GLfloat *)glMapBuffer(GL_SHADER_STORAGE_BUFFER, GL_READ_WRITE); //GL_READ_WRITE?
 
-		int dataLoc = 0 * paras.paraSize;
+		int dataLoc = 0 * shape.paraSize;
 		int weightShift = 0;
-		int biasShift = paras.weightSize;
-		for (int i = 0; i < paras.depth; i++) {
+		int biasShift = shape.weightSize;
+		for (int i = 0; i < shape.depth; i++) {
 			int wTop = layerWidths[i];
 			int wBottom = layerWidths[i+1];
 			for (int j = 0; j < wBottom; j++) {
@@ -125,10 +136,10 @@ public:
 
 
 		cerr << "=============================================================" << endl;
-		dataLoc = 1 * paras.paraSize;
+		dataLoc = 1 * shape.paraSize;
 		weightShift = 0;
-		biasShift = paras.weightSize;
-		for (int i = 0; i < paras.depth; i++) {
+		biasShift = shape.weightSize;
+		for (int i = 0; i < shape.depth; i++) {
 			int wTop = layerWidths[i];
 			int wBottom = layerWidths[i + 1];
 			for (int j = 0; j < wBottom; j++) {
@@ -145,10 +156,10 @@ public:
 		}//1
 
 		cerr << "=============================================================" << endl;
-		dataLoc = 2 * paras.paraSize;
+		dataLoc = 2 * shape.paraSize;
 		weightShift = 0;
-		biasShift = paras.weightSize;
-		for (int i = 0; i < paras.depth; i++) {
+		biasShift = shape.weightSize;
+		for (int i = 0; i < shape.depth; i++) {
 			int wTop = layerWidths[i];
 			int wBottom = layerWidths[i + 1];
 			for (int j = 0; j < wBottom; j++) {
@@ -165,10 +176,10 @@ public:
 		}//2
 
 		cerr << "=============================================================" << endl;
-		dataLoc = 3 * paras.paraSize;
+		dataLoc = 3 * shape.paraSize;
 		weightShift = 0;
-		biasShift = paras.weightSize;
-		for (int i = 0; i < paras.depth; i++) {
+		biasShift = shape.weightSize;
+		for (int i = 0; i < shape.depth; i++) {
 			int wTop = layerWidths[i];
 			int wBottom = layerWidths[i + 1];
 			for (int j = 0; j < wBottom; j++) {
@@ -190,21 +201,28 @@ public:
 
 	void PassCtrlToShader() {
 		// sizeof(ControlParas)
-		glBindBuffer(GL_SHADER_STORAGE_BUFFER, paraUBO);
-		glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(ControlParas), &paras.depth, GL_DYNAMIC_COPY);
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, paraLoc, paraUBO);
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, shapeUBO);
+		glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(ControlParas), &shape.depth, GL_DYNAMIC_COPY);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, shapeLoc, shapeUBO);
 		glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
 		glBindBuffer(GL_SHADER_STORAGE_BUFFER, widthSSBO);
-		glBufferData(GL_SHADER_STORAGE_BUFFER, (paras.depth + 1) * sizeof(int), &layerWidths[0], GL_DYNAMIC_COPY);
+		glBufferData(GL_SHADER_STORAGE_BUFFER, (shape.depth + 1) * sizeof(int), &layerWidths[0], GL_DYNAMIC_COPY);
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, widthLoc, widthSSBO);
 		glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 	}
 
-	void PassDataToShader() {
+	void PassMatsToShader() {
 		glBindBuffer(GL_SHADER_STORAGE_BUFFER, matSSBO);
 		glBufferData(GL_SHADER_STORAGE_BUFFER, 4 * matSize * sizeof(float), &mats[0], GL_DYNAMIC_COPY);
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, matLoc, matSSBO);
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+	}
+
+	void PassHParasToShader(){
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, paraUBO);
+		glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(TrainingParas), &paras.t, GL_DYNAMIC_COPY);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, paraLoc, paraUBO);
 		glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 	}
 
@@ -223,17 +241,24 @@ public:
 	}
 
 	void InitBuffer(int i = 0) {
-		paraLoc = 2 + i * 10;
+		shapeLoc = 2 + i * 10;
+		glGenBuffers(1, &shapeUBO);
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, shapeUBO);
+		glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(ControlParas), &shape.depth, GL_DYNAMIC_DRAW);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, shapeLoc, shapeUBO);
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+		paraLoc = 10 + i * 10;
 		glGenBuffers(1, &paraUBO);
 		glBindBuffer(GL_SHADER_STORAGE_BUFFER, paraUBO);
-		glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(ControlParas), &paras.depth, GL_DYNAMIC_DRAW);
+		glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(TrainingParas), &paras.t, GL_DYNAMIC_DRAW);
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, paraLoc, paraUBO);
 		glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
 		widthLoc = 3 + i * 10;
 		glGenBuffers(1, &widthSSBO);
 		glBindBuffer(GL_SHADER_STORAGE_BUFFER, widthSSBO);
-		glBufferData(GL_SHADER_STORAGE_BUFFER, (paras.depth + 1) * sizeof(int), &layerWidths[0], GL_DYNAMIC_COPY);
+		glBufferData(GL_SHADER_STORAGE_BUFFER, (shape.depth + 1) * sizeof(int), &layerWidths[0], GL_DYNAMIC_COPY);
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, widthLoc, widthSSBO);
 		glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
@@ -257,10 +282,10 @@ public:
 		filename << "mats/debugMED/mats" << std::put_time(&local, "%Y%m%d%H%M") << ".txt";
 		file.open(filename.str());
 
-		file << "DEPTH " << paras.depth << "\n";
-		file << "BIASLOC " << paras.weightSize << "\n";
+		file << "DEPTH " << shape.depth << "\n";
+		file << "BIASLOC " << shape.weightSize << "\n";
 		file << "WIDTH ";
-		for (int i = 0; i < paras.depth + 1; i++)
+		for (int i = 0; i < shape.depth + 1; i++)
 			file << layerWidths[i] << " ";
 		file << "\n\n";
 
@@ -270,7 +295,7 @@ public:
 		file << "\n\n";
 
 		file << "OUTPUT_AVE ";
-		for (int i = 0; i < layerWidths[paras.depth]; i++)
+		for (int i = 0; i < layerWidths[shape.depth]; i++)
 			file << outputAve[i] << " ";
 		file << "\n\n";
 
@@ -286,7 +311,7 @@ public:
 	void ReadFromFile(string filename) {
 		ifstream file(filename);
 		if (!file.is_open())
-			printf("File doesn't exist��\n");
+			printf("File doesn't exist!\n");
 
 		else {
 			char charBuffer[100];
@@ -295,20 +320,20 @@ public:
 				string strLine = string(charBuffer);
 				if (strLine.find("DATA") == -1) {
 					if (strLine.find("DEPTH") != -1) {
-						paras.depth = atof(strLine.substr(strLine.find(' ') + 1).c_str());
-						numHiddenLayer = paras.depth - 1;
+						shape.depth = atof(strLine.substr(strLine.find(' ') + 1).c_str());
+						numHiddenLayer = shape.depth - 1;
 					}
 					if (strLine.find("BIASLOC") != -1) {
-						paras.weightSize = atof(strLine.substr(strLine.find(' ') + 1).c_str());
+						shape.weightSize = atof(strLine.substr(strLine.find(' ') + 1).c_str());
 					}
 					if (strLine.find("WIDTH") != -1) {
 						string numLine = strLine.substr(strLine.find(' ') + 1);
-						for (int i = 0; i < paras.depth + 1; i++) {
+						for (int i = 0; i < shape.depth + 1; i++) {
 							layerWidths[i] = atof(numLine.substr(0, numLine.find(' ')).c_str());
 							numLine = numLine.substr(numLine.find(' ') + 1);
 						}
 						wIn = layerWidths[0];
-						wOut = layerWidths[paras.depth];
+						wOut = layerWidths[shape.depth];
 						wHidden = layerWidths[1];
 					}
 				}
@@ -335,7 +360,7 @@ public:
 
 			InitBuffer();
 			PassCtrlToShader();
-			PassDataToShader();
+			PassMatsToShader();
 
 			std::cout << "Reading completed." << std::endl;
 		}
@@ -362,34 +387,34 @@ public:
 		if (layerWidths != 0) delete[] layerWidths;
 	}
 private:
-	ControlParas paras;
+	ControlParas shape;
 	int* layerWidths;
 
 	float* mats;
 	//int matSize;
 
-	GLint paraLoc, widthLoc, matLoc;
-	GLuint paraUBO = -1, widthSSBO = -1, matSSBO = -1;
+	GLint shapeLoc, paraLoc, widthLoc, matLoc;
+	GLuint shapeUBO = -1, paraUBO = -1, widthSSBO = -1, matSSBO = -1;
 
 	void Malloc() {
-		paras.depth = numHiddenLayer + 1;
+		shape.depth = numHiddenLayer + 1;
 		layerWidths = new int[numHiddenLayer + 2]();
 		layerWidths[0] = wIn;
-		layerWidths[paras.depth] = wOut;
-		for (int i = 1; i < paras.depth; i++) {
+		layerWidths[shape.depth] = wOut;
+		for (int i = 1; i < shape.depth; i++) {
 			layerWidths[i] = wHidden;
 			//layerWidths[i] = wHidden + i;//debug
 		}
 
 		wSize = 0;
 		bSize = 0;
-		for (int i = 0; i < paras.depth; i++) {
+		for (int i = 0; i < shape.depth; i++) {
 			wSize += layerWidths[i] * layerWidths[i + 1];
 			bSize += layerWidths[i + 1];
 		}
 		matSize = wSize + bSize;
-		paras.weightSize = wSize;
-		paras.paraSize = matSize;
+		shape.weightSize = wSize;
+		shape.paraSize = matSize;
 
 		mats = new float[4 * matSize](); 
 		//arrangement: (weights->biases) -> (dWeight->dBias) -> moments->velocity
@@ -399,7 +424,7 @@ private:
 	}
 };
 
-//Can be optimized: AveVectorUBO can be part// of dataSSBO
+//Can be optimized: AveVectorUBO can be part of dataSSBO
 struct AveVectorUBO
 {
 	int inDim, outDim;
@@ -502,10 +527,6 @@ struct AveVectorUBO
 
 class DataSSBO {
 public:
-
-	float* dataID; //int
-	GLuint trainDataSSBO, validDataSSBO, idSSBO;
-
 	DataSSBO(int inputDim, int outputDim, float trainRatio = 0.8, int indexDim = 3) :
 		inputDim(inputDim), outputDim(outputDim), trainRatio(trainRatio), indexDim(indexDim)
 	{
@@ -527,6 +548,8 @@ public:
 		delete[] validData;
 		delete[] data;
 		delete[] dataID;
+		delete[] validLoss_Vec;
+		delete[] trainLoss_Vec;
 	}
 
 	void InitBuffer(int i = 0) {
@@ -555,6 +578,20 @@ public:
 			glBindBuffer(GL_SHADER_STORAGE_BUFFER, idSSBO);
 			glBufferData(GL_SHADER_STORAGE_BUFFER, (batch_size+1) * sizeof(float), dataID, GL_DYNAMIC_COPY);
 			glBindBufferBase(GL_SHADER_STORAGE_BUFFER, idLoc, idSSBO);
+			glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+			validLoss_Loc = 11 + i * 10;
+			glGenBuffers(1, &validLoss_SSBO);
+			glBindBuffer(GL_SHADER_STORAGE_BUFFER, validLoss_SSBO);
+			glBufferData(GL_SHADER_STORAGE_BUFFER, numValid * sizeof(float), validLoss_Vec, GL_DYNAMIC_COPY);
+			glBindBufferBase(GL_SHADER_STORAGE_BUFFER, validLoss_Loc, validLoss_SSBO);
+			glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+			trainLoss_Loc = 12 + i * 10;
+			glGenBuffers(1, &trainLoss_SSBO);
+			glBindBuffer(GL_SHADER_STORAGE_BUFFER, trainLoss_SSBO);
+			glBufferData(GL_SHADER_STORAGE_BUFFER, numTrain * sizeof(float), trainLoss_Vec, GL_DYNAMIC_COPY);
+			glBindBufferBase(GL_SHADER_STORAGE_BUFFER, trainLoss_Loc, trainLoss_SSBO);
 			glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 		}
 	};
@@ -600,9 +637,11 @@ public:
 
 		std::vector<int> index;
 		for (int i = 0; i < numSample; i++) index.push_back(i);
-		if(shuffle)
+		if (shuffle) {
+			std::srand(unsigned(std::time(0)));
 			std::random_shuffle(index.begin(), index.end());
-		
+		}
+
 		float* aveVec = new float[dataDim]();
 
 		int curIdx = 0;
@@ -640,8 +679,14 @@ public:
 		}
 		cerr << "Validation data ready: " << numValid << endl;
 
-		InitBuffer();
+		//for (int i = 0; i < numSample; i++) {
+		//	for (int j = 0; j < dataDim-3; j++) {
+		//		data[i *dataDim + j] -= aveVec[j];
+		//	}
+		//}
 
+		InitBuffer();
+		delete[] aveVec;
 		/*for (int i = 0; i < 1000; i++) {
 			cerr << data[(i + 1)*dataDim - 1] << endl;
 		}*/
@@ -657,6 +702,16 @@ public:
 		glBindBuffer(GL_SHADER_STORAGE_BUFFER, validDataSSBO);
 		glBufferData(GL_SHADER_STORAGE_BUFFER, (numValid * dataDim) * sizeof(float), &validData[0], GL_DYNAMIC_COPY);
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, validDataLoc, validDataSSBO);
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, validLoss_SSBO);
+		glBufferData(GL_SHADER_STORAGE_BUFFER, (numValid) * sizeof(float), &validLoss_Vec[0], GL_DYNAMIC_COPY);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, validLoss_Loc, validLoss_SSBO);
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, trainLoss_SSBO);
+		glBufferData(GL_SHADER_STORAGE_BUFFER, (numTrain) * sizeof(float), &trainLoss_Vec[0], GL_DYNAMIC_COPY);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, trainLoss_Loc, trainLoss_SSBO);
 		glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
 		AveVecs.PassDataToShader();
@@ -680,6 +735,9 @@ public:
 		glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 	}
 
+	GLuint valid_loss() { return validLoss_SSBO; }
+	GLuint train_loss() { return trainLoss_SSBO; }
+
 private:
 	int inputDim;
 	int outputDim;
@@ -693,16 +751,20 @@ private:
 	float trainRatio;
 
 	int batch_size = 8;
-	int curBatch = 0;
+	int curBatch = 0;// not used
 
 	vector<float*> unsortedData;
 	float* data;
 	float* trainData;
 	float* validData;
-	//dataid
+	float* dataID; //int
+	float* validLoss_Vec;
+	float* trainLoss_Vec;
 	
-	GLint trainDataLoc, validDataLoc, idLoc;
-	//ssbo
+	//float* aveVec;
+
+	GLint trainDataLoc, validDataLoc, idLoc, validLoss_Loc, trainLoss_Loc; //idSSBO is not used, except for debugging utilities
+	GLuint trainDataSSBO, validDataSSBO, idSSBO, validLoss_SSBO, trainLoss_SSBO;
 
 	AveVectorUBO  AveVecs;
 
@@ -721,7 +783,10 @@ private:
 			validData = data + (dataDim*numTrain);
 			
 			dataID = new float[batch_size + 1];//int
+			validLoss_Vec = new float[numValid]();
+			trainLoss_Vec = new float[numTrain]();
 
+			//aveVec = new float[dataDim-3]();
 			AveVecs.Reshape(inputDim, outputDim);
 		}
 	}

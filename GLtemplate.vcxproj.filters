@@ -118,7 +118,10 @@
     <None Include="shaders\Adam_cs.glsl">
       <Filter>shaders</Filter>
     </None>
-    <None Include="shaders\debug_evaluate_cs.glsl">
+    <None Include="shaders\validLoss_cs.glsl">
+      <Filter>shaders</Filter>
+    </None>
+    <None Include="shaders\trainLoss_cs.glsl">
       <Filter>shaders</Filter>
     </None>
   </ItemGroup>

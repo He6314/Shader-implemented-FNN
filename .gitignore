@@ -43,8 +43,14 @@
 *.log
 *.pdb
 x64\*
+mats\*
 .vs\*
 .vs/GLtemplate/v15/.suo
 .vs/GLtemplate/v15/Browse.VC.db
 .vs/GLtemplate/v15/ipch/AutoPCH/aefb7d72427699d3/MAIN.ipch
 .vs/GLtemplate/v15/ipch/AutoPCH/df7695f751005a23/MAIN.ipch
+*.ipch
+*.iobj
+x64/Release/GLtemplate.iobj
+x64/Release/GLtemplate.ipdb
+*.txt
